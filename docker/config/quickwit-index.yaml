@@ -1,0 +1,267 @@
+# Quickwit Index Configuration for Wazuh Alerts
+# Copyright (C) 2015, Wazuh Inc.
+
+version: 0.8
+
+index_id: wazuh-alerts
+
+doc_mapping:
+  field_mappings:
+    # Timestamp (required)
+    - name: timestamp
+      type: datetime
+      input_formats:
+        - rfc3339
+        - unix_timestamp
+      fast: true
+      indexed: true
+
+    # Agent information
+    - name: agent.id
+      type: text
+      tokenizer: raw
+      fast: true
+      indexed: true
+
+    - name: agent.name
+      type: text
+      tokenizer: default
+      indexed: true
+
+    - name: agent.ip
+      type: ip
+      fast: true
+      indexed: true
+
+    # Manager information
+    - name: manager.name
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # Rule information
+    - name: rule.id
+      type: u64
+      fast: true
+      indexed: true
+
+    - name: rule.level
+      type: u64
+      fast: true
+      indexed: true
+
+    - name: rule.description
+      type: text
+      tokenizer: default
+      indexed: true
+
+    - name: rule.firedtimes
+      type: u64
+      fast: true
+
+    - name: rule.mail
+      type: bool
+
+    - name: rule.hipaa
+      type: text
+      tokenizer: raw
+
+    - name: rule.nist_800_53
+      type: text
+      tokenizer: raw
+
+    - name: rule.tsc
+      type: text
+      tokenizer: raw
+
+    # MITRE ATT&CK information
+    - name: rule.mitre.id
+      type: text
+      tokenizer: raw
+      fast: true
+      indexed: true
+
+    - name: rule.mitre.tactic
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: rule.mitre.technique
+      type: text
+      tokenizer: raw
+      fast: true
+
+    # Decoder information
+    - name: decoder.name
+      type: text
+      tokenizer: raw
+
+    - name: decoder.parent
+      type: text
+      tokenizer: raw
+
+    # Log data
+    - name: full_log
+      type: text
+      tokenizer: default
+      indexed: true
+
+    - name: predecoder.program_name
+      type: text
+      tokenizer: raw
+
+    - name: predecoder.hostname
+      type: text
+      tokenizer: raw
+
+    - name: location
+      type: text
+      tokenizer: raw
+      indexed: true
+
+    # Additional data (flexible JSON field)
+    - name: data
+      type: json
+
+    # SysCheck (FIM) fields
+    - name: syscheck.path
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.event
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.md5_before
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.md5_after
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.sha1_before
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.sha1_after
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.sha256_before
+      type: text
+      tokenizer: raw
+
+    - name: syscheck.sha256_after
+      type: text
+      tokenizer: raw
+
+    # Vulnerability detector fields
+    - name: vulnerability.cve
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: vulnerability.title
+      type: text
+      tokenizer: default
+
+    - name: vulnerability.severity
+      type: text
+      tokenizer: raw
+      fast: true
+
+    - name: vulnerability.cvss
+      type: f64
+      fast: true
+
+    # Compliance fields
+    - name: compliance.pci
+      type: text
+      tokenizer: raw
+
+    - name: compliance.gdpr
+      type: text
+      tokenizer: raw
+
+    - name: compliance.hipaa
+      type: text
+      tokenizer: raw
+
+    # GeoIP fields (if enabled)
+    - name: GeoLocation.country_name
+      type: text
+      tokenizer: raw
+
+    - name: GeoLocation.city_name
+      type: text
+      tokenizer: raw
+
+    - name: GeoLocation.location
+      type: text
+      tokenizer: raw
+      
+    - name: rule
+      type: object
+      field_mappings:
+        - name: groups
+          type: text
+          tokenizer: raw
+          fast: true
+        - name: pci_dss
+          type: text
+          tokenizer: raw
+          fast: true
+        - name: gdpr
+          type: text
+          tokenizer: raw
+          fast: true
+
+  # Set timestamp as the primary timestamp field
+  timestamp_field: timestamp
+
+  # Enable dynamic mode to accept fields not explicitly defined
+  mode: dynamic
+
+  # Tag fields (for categorization)
+  #tag_fields:
+  #  - rule.groups
+  #  - rule.pci_dss
+  #  - rule.gdpr
+  tag_fields: ["rule.groups", "rule.pci_dss", "rule.gdpr"]
+
+
+
+# Indexing settings
+indexing_settings:
+  # Commit documents to storage every 10 seconds
+  commit_timeout_secs: 10
+
+  # Merge policy
+  merge_policy:
+    type: stable_log
+    merge_factor: 10
+    max_merge_factor: 12
+    maturation_period: 48h
+
+  # Resource limits
+  resources:
+    heap_size: 2GB
+
+  # Split settings
+  split_num_docs_target: 10000000
+
+# Search settings
+search_settings:
+  # Default fields to search when no field is specified
+  default_search_fields:
+    - full_log
+    - rule.description
+    - agent.name
+    - location
+
+# Retention policy (optional)
+# Uncomment to enable automatic deletion of old data
+# retention:
+#   period: 30d
+#   schedule: "0 2 * * *"  # Run at 2 AM daily

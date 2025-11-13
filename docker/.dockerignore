@@ -1,0 +1,93 @@
+# Docker ignore file for Wazuh build
+# This speeds up builds by not copying unnecessary files
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker files
+docker/
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation
+*.md
+docs/
+*.pdf
+
+# Build artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*~
+*.swp
+*.swo
+.DS_Store
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+.project
+.settings/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+# Test files
+**/test/
+**/tests/
+**/*_test.*
+**/*_spec.*
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.log
+
+# Package files
+*.tar.gz
+*.zip
+*.rpm
+*.deb
+*.pkg
+
+# Backup files
+*.bak
+*.backup
+
+# Large directories that will be downloaded by make deps
+src/external/
+.cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.coverage
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archives
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+*.rar

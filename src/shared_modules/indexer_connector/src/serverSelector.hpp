@@ -22,13 +22,14 @@
  * @brief ServerSelector class.
  *
  */
-class ServerSelector final : private RoundRobinSelector<std::string>
+template<typename HttpType>
+class TServerSelector final : private RoundRobinSelector<std::string>
 {
 private:
-    std::shared_ptr<Monitoring> m_monitoring;
+    std::shared_ptr<TMonitoring<HttpType>> m_monitoring;
 
 public:
-    ~ServerSelector() = default;
+    ~TServerSelector() = default;
 
     /**
      * @brief Class constructor. Initializes Round Robin selector and monitoring.
@@ -36,13 +37,18 @@ public:
      * @param values Servers to be selected.
      * @param timeout Timeout for monitoring.
      * @param authentication Object that provides secure communication.
+     * @param httpRequest Optional HTTP request instance for dependency injection (for testing).
+     * @param healthCheckEndpoint Health check endpoint to use (default: "/_cat/health" for OpenSearch/Elasticsearch).
      */
-    explicit ServerSelector(const std::vector<std::string>& values,
-                            const uint32_t timeout = INTERVAL,
-                            const SecureCommunication& authentication = {})
+    explicit TServerSelector(const std::vector<std::string>& values,
+                             const uint32_t timeout = INTERVAL,
+                             const SecureCommunication& authentication = {},
+                             HttpType* httpRequest = nullptr,
+                             std::string healthCheckEndpoint = "/_cat/health")
         : RoundRobinSelector<std::string>(values)
+        , m_monitoring(std::make_shared<TMonitoring<HttpType>>(
+              values, timeout, authentication, httpRequest ? httpRequest : &HttpType::instance(), std::move(healthCheckEndpoint)))
     {
-        m_monitoring = std::make_shared<Monitoring>(values, timeout, authentication);
     }
 
     /**
@@ -50,9 +56,9 @@ public:
      *
      * @return std::string Server address.
      */
-    std::string getNext()
+    std::string_view getNext()
     {
-        auto initialValue {RoundRobinSelector<std::string>::getNext()};
+        std::string_view initialValue {RoundRobinSelector<std::string>::getNext()};
         auto retValue {initialValue};
 
         while (!m_monitoring->isAvailable(retValue))
@@ -64,6 +70,28 @@ public:
             }
         }
         return retValue;
+    }
+
+    /**
+     * @brief Check have a server available.
+     *
+     * @return true if have a server available, false otherwise.
+     */
+    bool isAvailable()
+    {
+        std::string_view initialValue {RoundRobinSelector<std::string>::getNext()};
+        auto server {initialValue};
+
+        while (!m_monitoring->isAvailable(server))
+        {
+            server = RoundRobinSelector<std::string>::getNext();
+            if (server.compare(initialValue) == 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 };
 

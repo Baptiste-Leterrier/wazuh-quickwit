@@ -1,0 +1,163 @@
+version: '3.8'
+
+# Docker Compose for Wazuh with Quickwit
+# Copyright (C) 2015, Wazuh Inc.
+
+services:
+  # Quickwit Service
+  quickwit-server:
+    image: quickwit/quickwit:${QUICKWIT_VERSION:-0.8.1}
+    container_name: quickwit-server
+    hostname: quickwit-server
+    restart: unless-stopped
+
+    ports:
+      - "${QUICKWIT_REST_PORT:-7280}:7280"  # REST API
+      - "${QUICKWIT_GRPC_PORT:-7281}:7281"  # gRPC (optional)
+
+    volumes:
+      # Persistent data
+      - quickwit-data:/quickwit/qwdata
+      # Configuration
+      - ./config/quickwit-index.yaml:/quickwit/config/wazuh-alerts-index.yaml:ro
+      # Optional: custom Quickwit config
+      # - ./config/quickwit.yaml:/quickwit/config/quickwit.yaml:ro
+
+    environment:
+      - QW_LISTEN_ADDRESS=0.0.0.0
+      - QW_REST_LISTEN_PORT=7280
+      - QW_GRPC_LISTEN_PORT=7281
+      # Optional: Enable debug logging
+      # - RUST_LOG=quickwit=debug
+
+    command: run
+
+    networks:
+      - wazuh-quickwit-network
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7280/api/v1/indexes"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+    # Resource limits (adjust based on your needs)
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+
+  # Wazuh Manager Service
+  wazuh-manager:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        WAZUH_VERSION: ${WAZUH_VERSION:-4.9.0}
+        BUILD_JOBS: ${BUILD_JOBS:-4}
+        BUILD_DEBUG: ${BUILD_DEBUG:-0}
+        BUILD_TARGET: server
+
+    image: wazuh-quickwit:${WAZUH_VERSION:-latest}
+    container_name: wazuh-manager
+    hostname: wazuh-manager
+    restart: unless-stopped
+
+    depends_on:
+      quickwit-server:
+        condition: service_healthy
+
+    ports:
+      - "${WAZUH_API_PORT:-55000}:55000"           # Wazuh API
+      - "${WAZUH_REGISTRATION_PORT:-1515}:1515"    # Agent enrollment
+      - "${WAZUH_CLUSTER_PORT:-1516}:1516"         # Cluster communication
+      - "1514:1514/tcp"                             # Agent communication (TCP)
+      - "1514:1514/udp"                             # Agent communication (UDP)
+
+    volumes:
+      # Persistent data
+      - wazuh-data:/var/ossec
+      # Configuration (can be overridden)
+      - ./config/ossec.conf:/var/ossec/etc/ossec.conf:ro
+      # Optional: custom rules
+      # - ./config/local_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro
+      # Optional: custom decoders
+      # - ./config/local_decoder.xml:/var/ossec/etc/decoders/local_decoder.xml:ro
+
+    environment:
+      # Quickwit connection
+      - QUICKWIT_HOST=quickwit-server
+      - QUICKWIT_PORT=7280
+      - QUICKWIT_INDEX=${QUICKWIT_INDEX_NAME:-wazuh-alerts}
+      # Wazuh settings
+      - WAZUH_MANAGER_NAME=${WAZUH_MANAGER_NAME:-wazuh-manager}
+      - WAZUH_CLUSTER_DISABLED=${WAZUH_CLUSTER_DISABLED:-yes}
+      # Logging
+      - WAZUH_LOG_LEVEL=${WAZUH_LOG_LEVEL:-info}
+
+    networks:
+      - wazuh-quickwit-network
+
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/healthcheck.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 4G
+        reservations:
+          cpus: '2'
+          memory: 2G
+
+  # Optional: Quickwit UI (for development/debugging)
+  # Uncomment if you want a web UI for Quickwit
+  # quickwit-ui:
+  #   image: nginx:alpine
+  #   container_name: quickwit-ui
+  #   ports:
+  #     - "8080:80"
+  #   volumes:
+  #     - ./ui:/usr/share/nginx/html:ro
+  #   depends_on:
+  #     - quickwit-server
+  #   networks:
+  #     - wazuh-quickwit-network
+
+# Networks
+networks:
+  wazuh-quickwit-network:
+    name: ${NETWORK_NAME:-wazuh-quickwit-network}
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# Volumes
+volumes:
+  wazuh-data:
+    name: ${WAZUH_DATA_VOLUME:-wazuh-data}
+    driver: local
+
+  quickwit-data:
+    name: ${QUICKWIT_DATA_VOLUME:-quickwit-data}
+    driver: local
+
+# Usage:
+#
+# Start: docker compose up -d
+# Stop:  docker compose down
+# Logs:  docker compose logs -f
+# Shell: docker compose exec wazuh-manager bash
+#
+# For more commands, see: ./scripts/manage_stack.sh --help
