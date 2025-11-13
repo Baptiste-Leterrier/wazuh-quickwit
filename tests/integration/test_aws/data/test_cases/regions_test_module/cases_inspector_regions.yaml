@@ -1,0 +1,23 @@
+- name: inspector_region_with_data
+  description: Inspector regions configurations
+  configuration_parameters:
+    SERVICE_TYPE: inspector
+    REGIONS: us-east-2
+  metadata:
+    service_type: inspector
+    aws_profile: inspector_tests
+    only_logs_after: 2025-SEP-15
+    regions: us-east-2
+    expected_results: 106
+
+- name: inspector_inexistent_region
+  description: Inspector regions configurations
+  configuration_parameters:
+    SERVICE_TYPE: inspector
+    REGIONS: us-fake-1
+  metadata:
+    service_type: inspector
+    aws_profile: inspector_tests
+    only_logs_after: 2025-SEP-15
+    regions: us-fake-1
+    expected_results: 0
