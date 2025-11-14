@@ -105,6 +105,23 @@ namespace Utils
                 }
             }
 
+            void push(Type&& value)
+            {
+                if (m_running)
+                {
+                    if (UNLIMITED_QUEUE_SIZE == m_maxQueueSize || m_queue.size() < m_maxQueueSize)
+                    {
+                        m_queue.push
+                        (
+                            [value = std::move(value), this]()
+                        {
+                            this->m_functor(value);
+                        }
+                        );
+                    }
+                }
+            }
+
             void rundown()
             {
                 if (m_running)
