@@ -19,6 +19,7 @@ endif()
 
 # Include directories
 include_directories(include)
+include_directories(src)
 
 include_directories(${SRC_FOLDER})
 include_directories(${SRC_FOLDER}/external/cJSON)
