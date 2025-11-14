@@ -498,8 +498,7 @@ void IndexerConnector::diff(const nlohmann::json& responseJson,
         }
     }
 
-    auto url = selector->getNext();
-    url.append("/_bulk?refresh=wait_for");
+    std::string url = std::string(selector->getNext()) + "/_bulk?refresh=wait_for";
 
     sendBulkReactive(actions, url, secureCommunication);
 }
@@ -536,7 +535,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
         // Get current mappings.
         nlohmann::json currentMappings;
         HTTPRequest::instance().get(
-            RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName + "/_mapping"),
+            RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "/_mapping"),
                                .secureCommunication = secureCommunication},
             PostRequestParameters {.onSuccess = [&currentMappings](const std::string& response)
                                    { currentMappings = nlohmann::json::parse(response, nullptr, false); },
@@ -561,7 +560,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
             // Block write operations to the index.
             logDebug2(IC_NAME, "Blocking write operations to index '%s'.", m_indexName.c_str());
             HTTPRequest::instance().put(
-                RequestParametersJson {.url = HttpURL(selector->getNext() + "/" + m_indexName + "/_block/write"),
+                RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "/_block/write"),
                                        .secureCommunication = secureCommunication},
                 PostRequestParameters {.onSuccess = [this](const std::string& response) { m_blockedIndex = true; },
                                        .onError = onError},
@@ -570,7 +569,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
             // Get settings of the index.
             nlohmann::json currentSettings;
             HTTPRequest::instance().get(
-                RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName + "/_settings"),
+                RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "/_settings"),
                                    .secureCommunication = secureCommunication},
                 PostRequestParameters {.onSuccess = [&currentSettings](const std::string& response)
                                        { currentSettings = nlohmann::json::parse(response, nullptr, false); },
@@ -593,7 +592,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
             // Remove any previous backup if exists.
             std::string currentIndices;
             HTTPRequest::instance().get(
-                RequestParameters {.url = HttpURL(selector->getNext() + "/_cat/indices/"),
+                RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/_cat/indices/"),
                                    .secureCommunication = secureCommunication},
                 PostRequestParameters {.onSuccess = [&currentIndices](const std::string& response)
                                        { currentIndices = response; },
@@ -604,14 +603,14 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
             {
                 logDebug2(IC_NAME, "Deleting previous backup index '%s-backup'.", m_indexName.c_str());
                 HTTPRequest::instance().delete_(
-                    RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName + "-backup"),
+                    RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "-backup"),
                                        .secureCommunication = secureCommunication},
                     PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
                     ConfigurationParameters {});
             }
 
             logDebug2(IC_NAME, "Cloning index '%s' to '%s-backup'.", m_indexName.c_str(), m_indexName.c_str());
-            HTTPRequest::instance().put(RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName +
+            HTTPRequest::instance().put(RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName +
                                                                           "/_clone/" + m_indexName + "-backup"),
                                                            .data = cloneSettings,
                                                            .secureCommunication = secureCommunication},
@@ -620,7 +619,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
 
             // Delete index
             logDebug2(IC_NAME, "Deleting index '%s'.", m_indexName.c_str());
-            HTTPRequest::instance().delete_(RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName),
+            HTTPRequest::instance().delete_(RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName),
                                                                .secureCommunication = secureCommunication},
                                             PostRequestParameters {.onSuccess =
                                                                        [this](const std::string& response)
@@ -641,7 +640,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
                       reindexData.c_str());
 
             auto start = std::chrono::high_resolution_clock::now();
-            HTTPRequest::instance().post(RequestParameters {.url = HttpURL(selector->getNext() + "/_reindex"),
+            HTTPRequest::instance().post(RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/_reindex"),
                                                             .data = reindexData,
                                                             .secureCommunication = secureCommunication},
                                          PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
@@ -656,7 +655,7 @@ void IndexerConnector::validateMappings(const nlohmann::json& templateData,
             // Delete backup index.
             logDebug2(IC_NAME, "Deleting backup index '%s-backup'.", m_indexName.c_str());
             HTTPRequest::instance().delete_(
-                RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName + "-backup"),
+                RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "-backup"),
                                    .secureCommunication = secureCommunication},
                 PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
                 ConfigurationParameters {});
@@ -687,7 +686,7 @@ void IndexerConnector::rollbackIndexChanges(const std::shared_ptr<ServerSelector
         // Unblock write operations to the index.
         logDebug2(IC_NAME, "Unblocking write operations to index '%s'.", m_indexName.c_str());
         HTTPRequest::instance().put(
-            RequestParameters {.url = HttpURL(selector->getNext() + "/" + m_indexName + "/_settings"),
+            RequestParameters {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "/_settings"),
                                .data = R"({"index":{"blocks":{"write":false}}})",
                                .secureCommunication = secureCommunication},
             PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
@@ -785,14 +784,14 @@ void IndexerConnector::initialize(const nlohmann::json& templateData,
 
     // Initialize template.
     HTTPRequest::instance().put(
-        RequestParametersJson {.url = HttpURL(selector->getNext() + "/_index_template/" + m_indexName + "_template"),
+        RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/_index_template/" + m_indexName + "_template"),
                                .data = templateData,
                                .secureCommunication = secureCommunication},
         PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
         ConfigurationParameters {});
 
     // Initialize Index.
-    HTTPRequest::instance().put(RequestParametersJson {.url = HttpURL(selector->getNext() + "/" + m_indexName),
+    HTTPRequest::instance().put(RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName),
                                                        .data = templateData.at("template"),
                                                        .secureCommunication = secureCommunication},
                                 PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
@@ -803,7 +802,7 @@ void IndexerConnector::initialize(const nlohmann::json& templateData,
     {
         validateMappings(templateData, selector, secureCommunication);
         // Re-initialize Index in case no documents where reindexed.
-        HTTPRequest::instance().put(RequestParametersJson {.url = HttpURL(selector->getNext() + "/" + m_indexName),
+        HTTPRequest::instance().put(RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName),
                                                            .data = templateData.at("template"),
                                                            .secureCommunication = secureCommunication},
                                     PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
@@ -819,7 +818,7 @@ void IndexerConnector::initialize(const nlohmann::json& templateData,
         // Re-initialize Index if it was not recreated during reindexing.
         if (m_deletedIndex)
         {
-            HTTPRequest::instance().put(RequestParametersJson {.url = HttpURL(selector->getNext() + "/" + m_indexName),
+            HTTPRequest::instance().put(RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName),
                                                                .data = templateData.at("template"),
                                                                .secureCommunication = secureCommunication},
                                         PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
@@ -829,7 +828,7 @@ void IndexerConnector::initialize(const nlohmann::json& templateData,
         if (!updateMappingsData.empty())
         {
             HTTPRequest::instance().put(
-                RequestParametersJson {.url = HttpURL(selector->getNext() + "/" + m_indexName + "/_mapping"),
+                RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/" + m_indexName + "/_mapping"),
                                        .data = updateMappingsData,
                                        .secureCommunication = secureCommunication},
                 PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
@@ -1137,7 +1136,7 @@ IndexerConnector::IndexerConnector(
                     {});
             };
 
-            const auto serverUrl = selector->getNext();
+            const std::string serverUrl = std::string(selector->getNext());
 
             if (!bulkData.empty())
             {
@@ -1195,7 +1194,7 @@ IndexerConnector::IndexerConnector(
             try
             {
                 logDebug2(IC_NAME, "Syncing agent '%s' with indexer.", agentId.c_str());
-                diff(getAgentDocumentsIds(selector->getNext(), agentId, secureCommunication),
+                diff(getAgentDocumentsIds(std::string(selector->getNext()), agentId, secureCommunication),
                      agentId,
                      secureCommunication,
                      selector);
