@@ -17,6 +17,8 @@
 #include <future>
 #include <functional>
 #include <iostream>
+#include <type_traits>
+#include <memory>
 #include "threadSafeQueue.h"
 #include "promiseFactory.h"
 #include "commonDefs.h"
@@ -105,17 +107,20 @@ namespace Utils
                 }
             }
 
-            void push(Type&& value)
+            template<typename T = Type>
+            typename std::enable_if<!std::is_reference<T>::value, void>::type
+            push(Type&& value)
             {
                 if (m_running)
                 {
                     if (UNLIMITED_QUEUE_SIZE == m_maxQueueSize || m_queue.size() < m_maxQueueSize)
                     {
+                        auto sharedValue = std::make_shared<Type>(std::move(value));
                         m_queue.push
                         (
-                            [value = std::move(value), this]()
+                            [sharedValue, this]()
                         {
-                            this->m_functor(value);
+                            this->m_functor(*sharedValue);
                         }
                         );
                     }
