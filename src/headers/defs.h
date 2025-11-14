@@ -97,7 +97,7 @@ https://www.gnu.org/licenses/gpl.html\n"
 
 /* User Configuration */
 #ifndef USER
-#define USER            "wazuh"
+#define USER            "ossec"
 #endif
 
 #ifndef ROOTUSER
@@ -105,7 +105,7 @@ https://www.gnu.org/licenses/gpl.html\n"
 #endif
 
 #ifndef GROUPGLOBAL
-#define GROUPGLOBAL     "wazuh"
+#define GROUPGLOBAL     "ossec"
 #endif
 
 // Standard super user UID and GID
