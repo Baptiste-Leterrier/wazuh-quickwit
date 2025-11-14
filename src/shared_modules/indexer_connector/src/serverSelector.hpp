@@ -95,4 +95,10 @@ public:
     }
 };
 
+// Forward declare HTTPRequest for the type alias
+class HTTPRequest;
+
+// Type alias for the concrete ServerSelector type
+using ServerSelector = TServerSelector<HTTPRequest>;
+
 #endif // _SERVER_SELECTOR_HPP
