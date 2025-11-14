@@ -10,7 +10,7 @@
  */
 
 #include "IURLRequest.hpp"
-#include "asyncValueDispatcher.hpp"
+#include "threadDispatcher.h"
 #include "external/nlohmann/json.hpp"
 #include "quickwitConnector.hpp"
 #include "keyStore.hpp"
@@ -84,7 +84,7 @@ public:
 };
 
 using ThreadDispatchQueue = ThreadEventDispatcher<std::string, std::function<void(std::queue<std::string>&)>>;
-using ThreadLoggerQueue = Utils::AsyncValueDispatcher<QuickwitResponse, std::function<void(QuickwitResponse&&)>>;
+using ThreadLoggerQueue = Utils::AsyncDispatcher<QuickwitResponse, std::function<void(const QuickwitResponse&)>>;
 using PerIndexDispatcher = ThreadEventDispatcher<std::string, std::function<void(std::queue<std::string>&)>>;
 
 template<typename TSelector,
