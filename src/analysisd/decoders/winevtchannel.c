@@ -173,7 +173,7 @@ int DecodeWinevt(Eventinfo *lf){
 
                         if(child[j]->element && !strcmp(child[j]->element, "System") && child_attr[p]->element){
 
-                            if (!strcmp(child_attr[p]->element, "Provider") && child_attr[p]->attributes != NULL) {
+                            if (!strcmp(child_attr[p]->element, "Provider") && child_attr[p]->attributes != NULL && child_attr[p]->values != NULL) {
                                 for (int l = 0; child_attr[p]->attributes[l]; l++) {
                                     if (!strcmp(child_attr[p]->attributes[l], "Name")){
                                         cJSON_AddStringToObject(json_system_in, "providerName", child_attr[p]->values[l]);
@@ -183,11 +183,11 @@ int DecodeWinevt(Eventinfo *lf){
                                         cJSON_AddStringToObject(json_system_in, "eventSourceName", child_attr[p]->values[l]);
                                     }
                                 }
-                            } else if (!strcmp(child_attr[p]->element, "TimeCreated") && child_attr[p]->attributes != NULL) {
+                            } else if (!strcmp(child_attr[p]->element, "TimeCreated") && child_attr[p]->attributes != NULL && child_attr[p]->values != NULL) {
                                 if(!strcmp(child_attr[p]->attributes[0], "SystemTime")){
                                     cJSON_AddStringToObject(json_system_in, "systemTime", child_attr[p]->values[0]);
                                 }
-                            } else if (!strcmp(child_attr[p]->element, "Execution") && child_attr[p]->attributes != NULL) {
+                            } else if (!strcmp(child_attr[p]->element, "Execution") && child_attr[p]->attributes != NULL && child_attr[p]->values != NULL) {
                                 for (int l = 0; child_attr[p]->attributes[l]; l++) {
                                     if (!strcmp(child_attr[p]->attributes[l], "ProcessID")){
                                         cJSON_AddStringToObject(json_system_in, "processID", child_attr[p]->values[l]);

@@ -23,8 +23,13 @@ int Read_WModule(const OS_XML *xml, xml_node *node, void *d1, void *d2)
     xml_node **children = NULL;
     wmodule *cur_wmodule_exists;
 
-    if (!node->attributes[0]) {
+    if (!node->attributes || !node->attributes[0]) {
         merror("No such attribute '%s' at module.", XML_NAME);
+        return OS_INVALID;
+    }
+
+    if (!node->values || !node->values[0]) {
+        merror("No value for attribute '%s' at module.", XML_NAME);
         return OS_INVALID;
     }
 
