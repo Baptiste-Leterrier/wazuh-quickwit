@@ -95,6 +95,7 @@ int GlobalConf(const char *cfgfile)
     modules |= CALERTS;
     modules |= CCLUSTER;
     modules |= CANDSOCKET;
+    modules |= CWMODULE;
 
     /* Read config */
     if (ReadConfig(modules, cfgfile, &Config, NULL) < 0 ||

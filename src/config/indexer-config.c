@@ -24,7 +24,10 @@ static const char * special_array_keys[] = {
 
 static const char * valid_paths[] = {
     "indexer.enabled",
+    "indexer.type",
     "indexer.hosts",
+    "indexer.username",
+    "indexer.password",
     "indexer.ssl",
     "indexer.ssl.certificate_authorities",
     "indexer.ssl.certificate",
