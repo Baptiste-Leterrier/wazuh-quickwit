@@ -16,15 +16,17 @@
 #include "keyStore.hpp"
 #include "loggerHelper.h"
 #include "secureCommunication.hpp"
-#include "shared_modules/utils/certHelper.hpp"
 #include "simdjson.h"
 #include "threadEventDispatcher.hpp"
 #include <filesystem>
+#include <fstream>
 #include <mutex>
 #include <queue>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <pwd.h>
+#include <grp.h>
 
 static std::mutex G_QW_CREDENTIAL_MUTEX;
 constexpr auto QW_DATABASE_BASE_PATH = "queue/quickwit/";
@@ -33,6 +35,69 @@ constexpr auto DEFAULT_PATH {"tmp/root-ca-merged.pem"};
 constexpr auto QUICKWIT_COLUMN {"quickwit"};
 constexpr auto USER_KEY {"username"};
 constexpr auto PASSWORD_KEY {"password"};
+constexpr auto USER_GROUP {"wazuh"};
+
+namespace Utils
+{
+namespace CertHelper
+{
+static void mergeCaRootCertificates(const std::vector<std::string>& filePaths,
+                                   std::string& caRootCertificate,
+                                   const std::string& outputPath)
+{
+    std::string caRootCertificateContentMerged;
+
+    for (const auto& filePath : filePaths)
+    {
+        if (!std::filesystem::exists(filePath))
+        {
+            throw std::runtime_error("The CA root certificate file: '" + filePath + "' does not exist.");
+        }
+
+        std::ifstream file(filePath);
+        if (!file.is_open())
+        {
+            throw std::runtime_error("Could not open CA root certificate file: '" + filePath + "'.");
+        }
+
+        caRootCertificateContentMerged.append((std::istreambuf_iterator<char>(file)),
+                                             std::istreambuf_iterator<char>());
+    }
+
+    caRootCertificate = outputPath;
+
+    if (std::filesystem::path dirPath = std::filesystem::path(caRootCertificate).parent_path();
+        !std::filesystem::exists(dirPath) && !std::filesystem::create_directories(dirPath))
+    {
+        throw std::runtime_error("Could not create the directory for the CA root merged file");
+    }
+
+    std::ofstream outputFile(caRootCertificate);
+    if (!outputFile.is_open())
+    {
+        throw std::runtime_error("Could not write the CA root merged file");
+    }
+
+    outputFile << caRootCertificateContentMerged;
+    outputFile.close();
+
+    struct passwd* pwd = getpwnam(USER_GROUP);
+    struct group* grp = getgrnam(USER_GROUP);
+
+    if (pwd == nullptr || grp == nullptr)
+    {
+        throw std::runtime_error("Could not get the user and group information.");
+    }
+
+    if (chown(caRootCertificate.c_str(), pwd->pw_uid, grp->gr_gid) != 0)
+    {
+        throw std::runtime_error("Could not change the ownership of the CA root merged file");
+    }
+
+    logDebug2(QW_NAME, "All CA files merged into '%s' successfully.", caRootCertificate.c_str());
+}
+} // namespace CertHelper
+} // namespace Utils
 
 constexpr auto HTTP_TOO_MANY_REQUESTS {429};
 constexpr auto HTTP_BAD_REQUEST {400};
