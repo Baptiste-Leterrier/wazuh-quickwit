@@ -20,6 +20,7 @@
 #include "rocksDBWrapper.hpp"
 #include "threadDispatcher.h"
 #include "threadEventDispatcher.hpp"
+#include "serverSelector.hpp"
 
 #if __GNUC__ >= 4
 #define EXPORTED __attribute__((visibility("default")))
@@ -30,7 +31,6 @@
 static constexpr auto DEFAULT_INTERVAL = 60u;
 static constexpr auto IC_NAME {"indexer-connector"};
 
-class ServerSelector;
 class SecureCommunication;
 
 using ThreadDispatchQueue = ThreadEventDispatcher<std::string, std::function<void(std::queue<std::string>&)>>;
