@@ -19,6 +19,7 @@
 #include "rules.h"
 #include "stats.h"
 #include "fts.h"
+#include "wazuh_modules/wmodules.h"
 
 static long g_ftell_alerts = 0; ///< file‐offset pointer and its protecting lock, user for second part of alert id.
 static pthread_rwlock_t g_ftell_alerts_lock = PTHREAD_RWLOCK_INITIALIZER; ///< Lock for the file‐offset pointer.
@@ -95,10 +96,10 @@ int GlobalConf(const char *cfgfile)
     modules |= CALERTS;
     modules |= CCLUSTER;
     modules |= CANDSOCKET;
-    modules |= CWMODULE;
 
     /* Read config */
     if (ReadConfig(modules, cfgfile, &Config, NULL) < 0 ||
+        ReadConfig(CWMODULE, cfgfile, &wmodules, NULL) < 0 ||
         ReadConfig(CLABELS, cfgfile, &Config.labels, NULL) < 0) {
         return (OS_INVALID);
     }
