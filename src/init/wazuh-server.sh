@@ -296,6 +296,14 @@ start_service()
         echo -n '{"error":0,"data":['
     fi
     for i in ${SDAEMONS}; do
+        ## Special handling for wazuh-db to ensure it starts before dependent services
+        ## This prevents confusion with wazuh-dbd (database output daemon)
+        if [ X"$i" = "Xwazuh-db" ]; then
+             if [ $USE_JSON = false ]; then
+                 echo "Starting wazuh-db (internal database) first - required by other services..."
+             fi
+        fi
+
         ## If wazuh-maild is disabled, don't try to start it.
         if [ X"$i" = "Xwazuh-maild" ]; then
              grep "<email_notification>no<" ${DIR}/etc/ossec.conf >/dev/null 2>&1
@@ -383,6 +391,24 @@ start_service()
             else
                 echo "Started ${i}..."
             fi
+
+            ## Special verification for wazuh-db socket creation
+            if [ X"$i" = "Xwazuh-db" ]; then
+                WDB_SOCKET="${DIR}/queue/db/wdb"
+                # Give wazuh-db extra time to create the socket
+                sleep 1
+                if [ -S "${WDB_SOCKET}" ]; then
+                    if [ $USE_JSON = false ]; then
+                        echo "wazuh-db socket created successfully at ${WDB_SOCKET}"
+                    fi
+                else
+                    if [ $USE_JSON = false ]; then
+                        echo "WARNING: wazuh-db socket not found at ${WDB_SOCKET}"
+                        echo "This may cause connection errors for dependent services"
+                        echo "Check ${DIR}/logs/ossec.log for wazuh-db errors"
+                    fi
+                fi
+            fi
         else
             if [ $USE_JSON = true ]; then
                 echo -n '{"daemon":"'${i}'","status":"running"}'
@@ -424,6 +450,8 @@ pstatus()
         return 0;
     fi
 
+    # Use exact matching to avoid confusing wazuh-db with wazuh-dbd
+    # The pattern ${pfile}-*.pid ensures exact daemon name matching
     ls ${DIR}/var/run/${pfile}-*.pid > /dev/null 2>&1
     if [ $? = 0 ]; then
         for pid in `cat ${DIR}/var/run/${pfile}-*.pid 2>/dev/null`; do

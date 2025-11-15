@@ -112,14 +112,28 @@ init_mitre_db() {
 init_global_db() {
     log_info "Checking global database..."
 
-    GLOBAL_DB="${DB_DIR}/global.db"
+    # Global database is now stored in queue/db/ (not var/db/)
+    # This changed in newer Wazuh versions
+    GLOBAL_DB="${WAZUH_HOME}/queue/db/global.db"
+    LEGACY_GLOBAL_DB="${DB_DIR}/global.db"
 
+    # Check if global.db exists in the new location
     if [ -f "${GLOBAL_DB}" ]; then
-        log_success "Global database already exists"
+        log_success "Global database already exists at ${GLOBAL_DB}"
         return 0
     fi
 
-    log_info "Global database will be created automatically by wazuh-db"
+    # Check if it exists in legacy location (migration case)
+    if [ -f "${LEGACY_GLOBAL_DB}" ]; then
+        log_info "Found global.db in legacy location, migrating..."
+        cp "${LEGACY_GLOBAL_DB}" "${GLOBAL_DB}"
+        chown ossec:ossec "${GLOBAL_DB}"
+        chmod 660 "${GLOBAL_DB}"
+        log_success "Migrated global.db to new location"
+        return 0
+    fi
+
+    log_info "Global database will be created automatically by wazuh-db at ${GLOBAL_DB}"
     return 0
 }
 
@@ -159,11 +173,34 @@ init_socket_dir() {
     log_info "Checking wazuh-db socket directory..."
 
     SOCKET_DIR="${WAZUH_HOME}/queue/db"
-    mkdir -p "${SOCKET_DIR}"
+
+    # Create directory if it doesn't exist
+    if [ ! -d "${SOCKET_DIR}" ]; then
+        mkdir -p "${SOCKET_DIR}"
+        log_info "Created socket directory: ${SOCKET_DIR}"
+    fi
+
+    # Set correct permissions - critical for wazuh-db to create socket
     chmod 770 "${SOCKET_DIR}"
     chown ossec:ossec "${SOCKET_DIR}"
 
-    log_success "Socket directory configured"
+    # Clean up any stale socket files from previous runs
+    if [ -S "${SOCKET_DIR}/wdb" ]; then
+        log_warning "Removing stale socket file: ${SOCKET_DIR}/wdb"
+        rm -f "${SOCKET_DIR}/wdb"
+    fi
+
+    # Verify directory is writable
+    if [ ! -w "${SOCKET_DIR}" ]; then
+        log_error "Socket directory ${SOCKET_DIR} is not writable!"
+        return 1
+    fi
+
+    # List current contents for debugging
+    log_info "Socket directory contents:"
+    ls -la "${SOCKET_DIR}" 2>/dev/null || log_info "  (empty)"
+
+    log_success "Socket directory configured at ${SOCKET_DIR}"
     return 0
 }
 
