@@ -247,8 +247,32 @@ else
     # Default: start Wazuh services directly (avoiding recursive entrypoint calls)
     log_info "Starting Wazuh services directly..."
 
-    # Start Wazuh using wazuh-control (handles all daemons and proper setup)
-    log_info "Starting all Wazuh services with wazuh-control..."
+    # Start wazuh-db first - it's required by other services
+    log_info "Starting wazuh-db (internal database) first - required by other services..."
+    ${WAZUH_HOME}/bin/wazuh-db &
+
+    # Wait for wazuh-db socket to be created
+    log_info "Waiting for wazuh-db socket to be created..."
+    SOCKET_WAIT_MAX=30
+    SOCKET_WAIT_COUNT=0
+    while [ $SOCKET_WAIT_COUNT -lt $SOCKET_WAIT_MAX ]; do
+        if [ -S "${WAZUH_HOME}/queue/db/wdb" ]; then
+            log_success "wazuh-db socket created successfully"
+            break
+        fi
+        SOCKET_WAIT_COUNT=$((SOCKET_WAIT_COUNT + 1))
+        if [ $SOCKET_WAIT_COUNT -lt $SOCKET_WAIT_MAX ]; then
+            sleep 1
+        else
+            log_error "wazuh-db socket was not created within ${SOCKET_WAIT_MAX} seconds"
+            log_error "Checking if wazuh-db process is running..."
+            pgrep -a wazuh-db || log_error "wazuh-db process not found"
+            exit 1
+        fi
+    done
+
+    # Start Wazuh using wazuh-control (handles all other daemons and proper setup)
+    log_info "Starting remaining Wazuh services with wazuh-control..."
     ${WAZUH_HOME}/bin/wazuh-control start
     WAZUH_START_EXIT=$?
 
