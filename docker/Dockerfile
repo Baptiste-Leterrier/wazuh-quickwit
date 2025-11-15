@@ -224,9 +224,10 @@ RUN groupadd -r ossec 2>/dev/null || true && \
     groupadd -r wazuh 2>/dev/null || true && \
     useradd -r -g ossec -G wazuh -d /var/ossec -s /sbin/nologin ossec 2>/dev/null || true
 
-RUN useradd -r -g wazuh -G wazuh -d /var/ossec -s /sbin/nologin wazuh 2>/dev/null || true
+RUN useradd -r -g wazuh -G ossec,wazuh -d /var/ossec -s /sbin/nologin wazuh 2>/dev/null || true
 RUN getent passwd wazuh
 RUN getent group wazuh
+RUN getent group ossec
     
 
 # Create necessary directories
