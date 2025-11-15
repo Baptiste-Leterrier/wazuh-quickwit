@@ -55,6 +55,8 @@ mkdir -p \
     ${WAZUH_HOME}/queue/rootcheck \
     ${WAZUH_HOME}/queue/diff \
     ${WAZUH_HOME}/queue/fim/db \
+    ${WAZUH_HOME}/queue/db \
+    ${WAZUH_HOME}/var/db \
     ${WAZUH_HOME}/stats \
     ${WAZUH_HOME}/tmp \
     ${WAZUH_HOME}/var/run \

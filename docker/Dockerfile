@@ -253,6 +253,8 @@ RUN mkdir -p \
     /var/ossec/queue/rootcheck \
     /var/ossec/queue/diff \
     /var/ossec/queue/fim/db \
+    /var/ossec/queue/db \
+    /var/ossec/var/db \
     /var/ossec/stats \
     /var/ossec/tmp \
     /var/ossec/var/run
