@@ -59,14 +59,46 @@ mkdir -p \
     ${WAZUH_HOME}/tmp \
     ${WAZUH_HOME}/var/run
 
+log_success "Directories created successfully"
+log_info "Verifying critical directories exist..."
+log_info "  - ${WAZUH_HOME}/var/run: $([ -d "${WAZUH_HOME}/var/run" ] && echo "EXISTS" || echo "MISSING")"
+log_info "  - ${WAZUH_HOME}/logs: $([ -d "${WAZUH_HOME}/logs" ] && echo "EXISTS" || echo "MISSING")"
+log_info "  - ${WAZUH_HOME}/queue: $([ -d "${WAZUH_HOME}/queue" ] && echo "EXISTS" || echo "MISSING")"
+
+# Verify users exist
+log_info "Verifying required users and groups..."
+if ! getent passwd ossec > /dev/null 2>&1; then
+    log_error "User 'ossec' does not exist!"
+    exit 1
+fi
+if ! getent passwd wazuh > /dev/null 2>&1; then
+    log_warning "User 'wazuh' does not exist (this may be normal)"
+fi
+if ! getent group ossec > /dev/null 2>&1; then
+    log_error "Group 'ossec' does not exist!"
+    exit 1
+fi
+log_success "Users and groups verified"
+
 # Set permissions
 log_info "Setting permissions..."
-chown -R ossec:ossec \
+if chown -R ossec:ossec \
     ${WAZUH_HOME}/logs \
     ${WAZUH_HOME}/queue \
     ${WAZUH_HOME}/stats \
     ${WAZUH_HOME}/tmp \
-    ${WAZUH_HOME}/var
+    ${WAZUH_HOME}/var 2>&1; then
+    log_success "Permissions set successfully"
+else
+    log_error "Failed to set permissions!"
+    exit 1
+fi
+
+# Verify var/run permissions specifically
+log_info "Verifying ${WAZUH_HOME}/var/run permissions..."
+chmod 770 ${WAZUH_HOME}/var/run
+ls -la ${WAZUH_HOME}/var/run
+log_success "Permissions: $(stat -c '%a %U:%G' ${WAZUH_HOME}/var/run)"
 
 # Update ossec.conf with environment variables if not already configured
 OSSEC_CONF="${WAZUH_HOME}/etc/ossec.conf"
@@ -139,10 +171,23 @@ if [ $# -gt 0 ]; then
 else
     # Default: start Wazuh in foreground
     log_info "Starting Wazuh control process..."
+    log_info "Running: ${WAZUH_HOME}/bin/wazuh-control start"
+
+    # Check if wazuh-control exists
+    if [ ! -f "${WAZUH_HOME}/bin/wazuh-control" ]; then
+        log_error "wazuh-control not found at ${WAZUH_HOME}/bin/wazuh-control"
+        exit 1
+    fi
 
     # Run wazuh-control and capture its output
+    log_info "Executing wazuh-control start..."
     output="$(${WAZUH_HOME}/bin/wazuh-control start 2>&1)"
+    exit_code=$?
+
+    log_info "wazuh-control exit code: ${exit_code}"
+    log_info "=== wazuh-control output START ==="
     echo "$output"
+    log_info "=== wazuh-control output END ==="
 
     # Determine success by matching "Completed."
     if echo "$output" | grep -q "Completed."; then
@@ -150,12 +195,26 @@ else
         log_info "Quickwit endpoint: http://${QUICKWIT_HOST}:${QUICKWIT_PORT}"
         log_info "Quickwit index: ${QUICKWIT_INDEX}"
     else
-        log_error "Wazuh Control failed to start"
-        echo "$output"
+        log_error "Wazuh Control failed to start (exit code: ${exit_code})"
+        log_error "Output did not contain 'Completed.' string"
+
+        # Check for common issues
+        if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
+            log_info "Last 20 lines of ossec.log:"
+            tail -20 ${WAZUH_HOME}/logs/ossec.log || true
+        fi
+
+        # Check for specific error patterns
+        if echo "$output" | grep -iq "Unable to create PID"; then
+            log_error "PID file creation error detected!"
+            log_error "Checking ${WAZUH_HOME}/var/run directory:"
+            ls -la ${WAZUH_HOME}/var/run || log_error "Directory does not exist or cannot be accessed"
+        fi
+
         exit 1
     fi
 
     # Keep the container alive by tailing logs
     log_info "Tailing Wazuh logs..."
     exec tail -f ${WAZUH_HOME}/logs/ossec.log
-    fi
+fi
