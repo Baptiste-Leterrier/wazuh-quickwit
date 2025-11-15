@@ -253,6 +253,8 @@ RUN chown -R ossec:ossec /var/ossec && \
                   /var/ossec/stats \
                   /var/ossec/tmp \
                   /var/ossec/var && \
+    # Give group write permissions to /var/run so wazuh user can create PID files
+    chmod 770 /var/ossec/var/run && \
     chmod +x /var/ossec/bin/* 2>/dev/null || true && \
     # Ensure API and framework directories have proper group access
     find /var/ossec/api -type d -exec chmod g+rx {} \; 2>/dev/null || true && \
