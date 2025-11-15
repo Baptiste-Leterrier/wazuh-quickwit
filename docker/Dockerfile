@@ -234,6 +234,8 @@ RUN getent group ossec
 RUN mkdir -p \
     /var/ossec/logs \
     /var/ossec/etc \
+    /var/ossec/etc/decoders \
+    /var/ossec/etc/rules \
     /var/ossec/queue/alerts \
     /var/ossec/queue/rids \
     /var/ossec/queue/fts \

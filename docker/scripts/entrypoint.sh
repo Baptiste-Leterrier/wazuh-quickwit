@@ -57,7 +57,9 @@ mkdir -p \
     ${WAZUH_HOME}/queue/fim/db \
     ${WAZUH_HOME}/stats \
     ${WAZUH_HOME}/tmp \
-    ${WAZUH_HOME}/var/run
+    ${WAZUH_HOME}/var/run \
+    ${WAZUH_HOME}/etc/decoders \
+    ${WAZUH_HOME}/etc/rules
 
 log_success "Directories created successfully"
 log_info "Verifying critical directories exist..."
