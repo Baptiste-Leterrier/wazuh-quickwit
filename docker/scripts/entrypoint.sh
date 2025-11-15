@@ -63,13 +63,29 @@ mkdir -p \
 
 log_success "Directories created successfully"
 
-# Clean custom decoder/rules directories to prevent decoder plugin errors
-# These directories are for user customization, but can cause startup failures if
-# they contain malformed or incompatible files from previous runs
-log_info "Cleaning custom decoder and rules directories..."
-rm -f ${WAZUH_HOME}/etc/decoders/* 2>/dev/null || true
-rm -f ${WAZUH_HOME}/etc/rules/* 2>/dev/null || true
-log_success "Custom directories cleaned"
+# Verify custom decoder/rules directories
+# These directories are for user customization
+log_info "Verifying custom decoder and rules directories..."
+if [ -d "${WAZUH_HOME}/etc/decoders" ]; then
+    decoder_count=$(find ${WAZUH_HOME}/etc/decoders -name "*.xml" 2>/dev/null | wc -l)
+    log_info "Found ${decoder_count} custom decoder file(s) in ${WAZUH_HOME}/etc/decoders/"
+    if [ ${decoder_count} -gt 0 ]; then
+        log_info "Custom decoder files:"
+        find ${WAZUH_HOME}/etc/decoders -name "*.xml" -type f -exec basename {} \; 2>/dev/null | while read file; do
+            log_info "  - ${file}"
+        done
+    fi
+else
+    log_warning "Custom decoder directory not found: ${WAZUH_HOME}/etc/decoders"
+fi
+
+if [ -d "${WAZUH_HOME}/etc/rules" ]; then
+    rules_count=$(find ${WAZUH_HOME}/etc/rules -name "*.xml" 2>/dev/null | wc -l)
+    log_info "Found ${rules_count} custom rules file(s) in ${WAZUH_HOME}/etc/rules/"
+else
+    log_warning "Custom rules directory not found: ${WAZUH_HOME}/etc/rules"
+fi
+log_success "Custom directories verified"
 log_info "Verifying critical directories exist..."
 log_info "  - ${WAZUH_HOME}/var/run: $([ -d "${WAZUH_HOME}/var/run" ] && echo "EXISTS" || echo "MISSING")"
 log_info "  - ${WAZUH_HOME}/logs: $([ -d "${WAZUH_HOME}/logs" ] && echo "EXISTS" || echo "MISSING")"
@@ -212,6 +228,40 @@ else
         if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
             log_info "Last 20 lines of ossec.log:"
             tail -20 ${WAZUH_HOME}/logs/ossec.log || true
+
+            # Check for decoder-specific errors
+            if grep -q "Error.*decoder" ${WAZUH_HOME}/logs/ossec.log 2>/dev/null; then
+                log_error "=== DECODER ERRORS DETECTED ==="
+                log_error "Decoder-related errors found in ossec.log:"
+                grep -i "decoder" ${WAZUH_HOME}/logs/ossec.log | tail -10 || true
+
+                log_info "Checking decoder directories..."
+                log_info "Default decoders location: ${WAZUH_HOME}/ruleset/decoders/"
+                if [ -d "${WAZUH_HOME}/ruleset/decoders" ]; then
+                    default_decoder_count=$(find ${WAZUH_HOME}/ruleset/decoders -name "*.xml" 2>/dev/null | wc -l)
+                    log_info "  - Found ${default_decoder_count} default decoder files"
+                else
+                    log_error "  - Default decoder directory NOT FOUND!"
+                fi
+
+                log_info "Custom decoders location: ${WAZUH_HOME}/etc/decoders/"
+                if [ -d "${WAZUH_HOME}/etc/decoders" ]; then
+                    custom_decoder_count=$(find ${WAZUH_HOME}/etc/decoders -name "*.xml" 2>/dev/null | wc -l)
+                    log_info "  - Found ${custom_decoder_count} custom decoder files"
+                    if [ ${custom_decoder_count} -gt 0 ]; then
+                        log_info "  - Custom decoder files:"
+                        find ${WAZUH_HOME}/etc/decoders -name "*.xml" -type f 2>/dev/null | while read file; do
+                            log_info "    - ${file}"
+                            log_info "      Size: $(stat -c%s ${file} 2>/dev/null || echo 'unknown') bytes"
+                            log_info "      First 5 lines:"
+                            head -5 "${file}" 2>/dev/null | sed 's/^/        /' || true
+                        done
+                    fi
+                else
+                    log_error "  - Custom decoder directory NOT FOUND!"
+                fi
+                log_error "=== END DECODER ERROR DIAGNOSTICS ==="
+            fi
         fi
 
         # Check for specific error patterns
