@@ -69,6 +69,7 @@ COPY etc/ /build/etc/
 COPY ruleset/ /build/ruleset/
 COPY framework/ /build/framework/
 COPY api/ /build/api/
+COPY tools/ /build/tools/
 COPY VERSION.json /build/
 COPY install.sh /build/
 COPY gen_ossec.sh /build/
@@ -212,15 +213,21 @@ RUN apt-get update && apt-get install -y \
     libpopt0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-RUN pip3 install --no-cache-dir requests 2>/dev/null || \
-    pip3 install --no-cache-dir --break-system-packages requests
+# Install Python dependencies for Wazuh and database tools
+RUN pip3 install --no-cache-dir requests sqlalchemy 2>/dev/null || \
+    pip3 install --no-cache-dir --break-system-packages requests sqlalchemy
 
 # Copy Wazuh installation from builder
 COPY --from=builder /var/ossec /var/ossec
 
 # Copy framework (Python SDK)
 COPY --from=builder /build/framework /var/ossec/framework
+
+# Copy tools (including MITRE database tools)
+COPY --from=builder /build/tools /var/ossec/tools
+
+# Copy ruleset (includes MITRE data)
+COPY --from=builder /build/ruleset /var/ossec/ruleset
 
 # NOTE: Use the ossec.conf from the builder stage (Wazuh's default)
 # Do not override with custom ossec.conf to avoid XML parsing issues
@@ -275,10 +282,11 @@ RUN chown -R ossec:ossec /var/ossec && \
     find /var/ossec/api -type d -exec chmod g+rx {} \; 2>/dev/null || true && \
     find /var/ossec/framework -type d -exec chmod g+rx {} \; 2>/dev/null || true
 
-# Copy entrypoint and healthcheck scripts
+# Copy entrypoint, database initialization, and healthcheck scripts
 COPY docker/scripts/entrypoint.sh /usr/local/bin/
+COPY docker/scripts/init-databases.sh /usr/local/bin/
 COPY docker/scripts/healthcheck.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/init-databases.sh /usr/local/bin/healthcheck.sh
 
 
 # NOTE: Lists are already in /var/ossec/etc/lists from the builder stage

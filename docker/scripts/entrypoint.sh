@@ -148,6 +148,16 @@ chown ossec:ossec ${WAZUH_HOME}/var/run
 ls -la ${WAZUH_HOME}/var/run
 log_success "Permissions verified for ${WAZUH_HOME}/var/run"
 
+# Initialize databases before starting services
+log_info "Initializing Wazuh databases..."
+if [ -f "${WAZUH_HOME}/../scripts/init-databases.sh" ]; then
+    bash "${WAZUH_HOME}/../scripts/init-databases.sh" || log_warning "Database initialization reported issues"
+elif [ -f "/usr/local/bin/init-databases.sh" ]; then
+    bash "/usr/local/bin/init-databases.sh" || log_warning "Database initialization reported issues"
+else
+    log_warning "Database initialization script not found, skipping..."
+fi
+
 # Update ossec.conf with environment variables if not already configured
 OSSEC_CONF="${WAZUH_HOME}/etc/ossec.conf"
 if [ -f "$OSSEC_CONF" ]; then
