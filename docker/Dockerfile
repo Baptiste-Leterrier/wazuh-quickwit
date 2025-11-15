@@ -180,6 +180,10 @@ RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
     libc6 \
+    nano \
+    gdb \
+    nano \
+    strace \
     libgcc-s1 \
     libssl3 \
     libsqlite3-0 \
@@ -217,10 +221,7 @@ COPY --from=builder /var/ossec /var/ossec
 # Copy framework (Python SDK)
 COPY --from=builder /build/framework /var/ossec/framework
 
-# Explicitly copy custom decoder and rules files from source
-# These are user-customizable files that should be preserved
-COPY etc/decoders/ /var/ossec/etc/decoders/
-COPY etc/rules/ /var/ossec/etc/rules/
+
 
 # Create Wazuh user and groups if they don't exist
 # Note: Both ossec and wazuh groups are needed because the build stage
@@ -252,6 +253,7 @@ RUN mkdir -p \
     /var/ossec/tmp \
     /var/ossec/var/run
 
+
 # Set proper permissions
 # Files are owned by ossec:ossec, but ossec user is also member of wazuh group
 RUN chown -R ossec:ossec /var/ossec && \
@@ -274,6 +276,13 @@ RUN chown -R ossec:ossec /var/ossec && \
 COPY docker/scripts/entrypoint.sh /usr/local/bin/
 COPY docker/scripts/healthcheck.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
+
+
+# Explicitly copy custom decoder and rules files from source
+# These are user-customizable files that should be preserved
+COPY etc/decoders/ /var/ossec/etc/decoders/
+COPY etc/rules/ /var/ossec/etc/rules/
+
 
 # Expose ports
 EXPOSE 55000 1514/tcp 1514/udp 1515 1516

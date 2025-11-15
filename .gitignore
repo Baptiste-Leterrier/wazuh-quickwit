@@ -8,6 +8,8 @@
 *.dll
 *.exe
 *.dylib
+docker/complete-build-error.log
+
 
 # Auto generated build files
 src/LOCATION
