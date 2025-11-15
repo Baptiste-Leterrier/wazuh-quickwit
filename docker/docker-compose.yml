@@ -80,10 +80,14 @@ services:
       - "1514:1514/udp"                             # Agent communication (UDP)
 
     volumes:
-      # Persistent data
-      - wazuh-data:/var/ossec
-      # Configuration (can be overridden)
-      - ./config/ossec.conf:/var/ossec/etc/ossec.conf:ro
+      # Persistent data - mount only subdirectories that need persistence
+      # Don't mount /var/ossec directly as it shadows the built-in decoders/rules
+      - wazuh-data-logs:/var/ossec/logs
+      - wazuh-data-queue:/var/ossec/queue
+      - wazuh-data-stats:/var/ossec/stats
+      # NOTE: ossec.conf is included in the image via COPY in Dockerfile
+      # If you need to override it, mount it here (ensure file exists)
+      # - ./config/ossec.conf:/var/ossec/etc/ossec.conf
       # Optional: custom rules
       # - ./config/local_rules.xml:/var/ossec/etc/rules/local_rules.xml:ro
       # Optional: custom decoders
@@ -145,8 +149,16 @@ networks:
 
 # Volumes
 volumes:
-  wazuh-data:
-    name: ${WAZUH_DATA_VOLUME:-wazuh-data}
+  wazuh-data-logs:
+    name: ${WAZUH_DATA_LOGS_VOLUME:-wazuh-data-logs}
+    driver: local
+
+  wazuh-data-queue:
+    name: ${WAZUH_DATA_QUEUE_VOLUME:-wazuh-data-queue}
+    driver: local
+
+  wazuh-data-stats:
+    name: ${WAZUH_DATA_STATS_VOLUME:-wazuh-data-stats}
     driver: local
 
   quickwit-data:

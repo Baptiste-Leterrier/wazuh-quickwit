@@ -113,12 +113,31 @@ if chown -R ossec:ossec \
     ${WAZUH_HOME}/queue \
     ${WAZUH_HOME}/stats \
     ${WAZUH_HOME}/tmp \
-    ${WAZUH_HOME}/var 2>&1; then
+    ${WAZUH_HOME}/var \
+    ${WAZUH_HOME}/etc 2>&1; then
     log_success "Permissions set successfully"
 else
     log_error "Failed to set permissions!"
     exit 1
 fi
+
+# Ensure all config files and directories are fully readable
+chmod 755 ${WAZUH_HOME}/etc 2>/dev/null || true
+chmod 644 ${WAZUH_HOME}/etc/*.conf 2>/dev/null || true
+chmod 644 ${WAZUH_HOME}/etc/*.keys 2>/dev/null || true
+chmod 755 ${WAZUH_HOME}/etc/decoders 2>/dev/null || true
+chmod 755 ${WAZUH_HOME}/etc/rules 2>/dev/null || true
+chmod 755 ${WAZUH_HOME}/etc/lists 2>/dev/null || true
+chmod 755 ${WAZUH_HOME}/etc/shared 2>/dev/null || true
+chmod 644 ${WAZUH_HOME}/etc/decoders/* 2>/dev/null || true
+chmod 644 ${WAZUH_HOME}/etc/rules/* 2>/dev/null || true
+chmod 644 ${WAZUH_HOME}/etc/lists/* 2>/dev/null || true
+chmod 644 ${WAZUH_HOME}/etc/shared/* 2>/dev/null || true
+# Fix nested directory permissions (for lists subdirectories like malicious-ioc/)
+find ${WAZUH_HOME}/etc/lists -type d 2>/dev/null | xargs chmod 755 2>/dev/null || true
+find ${WAZUH_HOME}/etc/lists -type f 2>/dev/null | xargs chmod 644 2>/dev/null || true
+chown -R ossec:ossec ${WAZUH_HOME}/etc 2>/dev/null || true
+log_info "Configuration file permissions set to 644 (rw-r--r--)"
 
 # Verify var/run permissions specifically
 log_info "Verifying ${WAZUH_HOME}/var/run permissions..."
@@ -131,6 +150,14 @@ log_success "Permissions verified for ${WAZUH_HOME}/var/run"
 OSSEC_CONF="${WAZUH_HOME}/etc/ossec.conf"
 if [ -f "$OSSEC_CONF" ]; then
     log_info "Checking configuration..."
+
+    # Check for database configuration
+    if grep -q "<database>" "$OSSEC_CONF" 2>/dev/null; then
+        log_success "Database configuration found in ossec.conf"
+    else
+        log_warning "Database configuration NOT found in ossec.conf - wazuh-dbd may not start"
+        log_warning "Please ensure database section is in your ossec.conf configuration"
+    fi
 
     # Update Quickwit host if needed
     if grep -q "quickwit" "$OSSEC_CONF" 2>/dev/null; then
@@ -184,9 +211,10 @@ if [ ! -f "${WAZUH_HOME}/.docker_initialized" ]; then
     log_success "Wazuh initialized"
 fi
 
-# Cleanup stale PID files
+# Cleanup stale PID files from previous runs (but not state files)
 log_info "Cleaning up stale PID files..."
-rm -f ${WAZUH_HOME}/var/run/*.pid 2>/dev/null || true
+rm -f ${WAZUH_HOME}/var/run/*.pid.* 2>/dev/null || true
+rm -f ${WAZUH_HOME}/var/run/*.failed 2>/dev/null || true
 
 # Start Wazuh
 log_info "Starting Wazuh Manager..."
@@ -199,51 +227,58 @@ else
     # Default: start Wazuh services directly (avoiding recursive entrypoint calls)
     log_info "Starting Wazuh services directly..."
 
-    # Check if wazuh-analysisd exists
-    if [ ! -f "${WAZUH_HOME}/bin/wazuh-analysisd" ]; then
-        log_error "wazuh-analysisd not found at ${WAZUH_HOME}/bin/wazuh-analysisd"
-        exit 1
-    fi
+    # Start Wazuh using wazuh-control (handles all daemons and proper setup)
+    log_info "Starting all Wazuh services with wazuh-control..."
+    ${WAZUH_HOME}/bin/wazuh-control start
+    WAZUH_START_EXIT=$?
 
-    # Start wazuh-analysisd directly
-    log_info "Starting wazuh-analysisd daemon..."
-
-    # Run wazuh-analysisd in the foreground but in the background of this script
-    # This allows it to daemonize itself properly
-    nohup ${WAZUH_HOME}/bin/wazuh-analysisd > ${WAZUH_HOME}/logs/analysisd.log 2>&1 &
-    ANALYSISD_CMDPID=$!
-
-    log_info "wazuh-analysisd startup process PID: $ANALYSISD_CMDPID"
-
-    # Give it time to start and daemonize
-    sleep 4
-
-    # Look for the actual daemon process (not the startup process)
-    DAEMON_PID=$(pgrep -f "^${WAZUH_HOME}/bin/wazuh-analysisd" | grep -v grep | head -1)
-
-    if [ -n "$DAEMON_PID" ]; then
-        log_success "wazuh-analysisd daemon is running with PID: $DAEMON_PID"
+    if [ $WAZUH_START_EXIT -eq 0 ]; then
+        log_success "wazuh-control start completed successfully"
     else
-        log_error "wazuh-analysisd daemon failed to start!"
-        log_error "Checking logs for errors..."
-        tail -40 ${WAZUH_HOME}/logs/analysisd.log 2>/dev/null || echo "(no analysisd log)"
-        tail -40 ${WAZUH_HOME}/logs/ossec.log 2>/dev/null || echo "(no ossec log)"
-        log_error ""
-        log_error "Note: Some group switching errors in containers are benign."
-        log_error "If the daemon started but failed to switch groups, we'll continue anyway."
-        # Don't exit - let's check the log more carefully
-        if tail -40 ${WAZUH_HOME}/logs/analysisd.log 2>/dev/null | grep -q "Unable to switch to group"; then
-            log_warning "Detected group switching error - this may be expected in containers"
-            log_warning "The daemon may still be functional. Continuing with startup..."
-        fi
+        # wazuh-control may fail if API has issues, but other services are OK
+        log_warning "wazuh-control start reported exit code $WAZUH_START_EXIT, but continuing..."
+        log_info "Some services may not be running - checking logs..."
     fi
 
-    # Start successfully
-    log_success "Wazuh services started successfully"
-    log_info "Quickwit endpoint: http://${QUICKWIT_HOST}:${QUICKWIT_PORT}"
-    log_info "Quickwit index: ${QUICKWIT_INDEX}"
-    log_info "Tailing Wazuh logs..."
+    # Give services time to start and daemonize
+    sleep 3
 
-    # Keep the container alive by tailing logs
-    exec tail -f ${WAZUH_HOME}/logs/ossec.log
+    # Give more time for services to stabilize
+    sleep 5
+
+    # Check daemon status
+    log_info "Checking Wazuh service status..."
+    ${WAZUH_HOME}/bin/wazuh-control status 2>&1 || true
+
+    # Check if any Wazuh process is running (including modulesd which may be starting)
+    log_info "Waiting for Wazuh daemons to fully initialize..."
+    MAX_WAIT=60
+    WAIT_COUNT=0
+
+    while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+        # Count actual daemon processes (not control/shell processes)
+        DAEMON_COUNT=$(pgrep -f "wazuh-(analysisd|remoted|authd|execd|logcollector|syscheckd|monitord|modulesd)" 2>/dev/null | wc -l)
+
+        if [ $DAEMON_COUNT -gt 0 ]; then
+            log_success "Wazuh daemons are running ($DAEMON_COUNT processes)"
+            log_info "Quickwit endpoint: http://${QUICKWIT_HOST}:${QUICKWIT_PORT}"
+            log_info "Quickwit index: ${QUICKWIT_INDEX}"
+            log_info "Tailing Wazuh logs..."
+            # Keep the container alive by tailing logs
+            exec tail -f ${WAZUH_HOME}/logs/ossec.log
+        fi
+
+        WAIT_COUNT=$((WAIT_COUNT + 1))
+        if [ $WAIT_COUNT -lt $MAX_WAIT ]; then
+            log_info "Wazuh daemons starting up... waiting ($WAIT_COUNT/$MAX_WAIT)"
+            sleep 1
+        fi
+    done
+
+    # If we get here, services didn't start in time
+    log_error "Wazuh daemons failed to start within ${MAX_WAIT} seconds"
+    log_error "Last 100 lines of ${WAZUH_HOME}/logs/ossec.log:"
+    tail -100 ${WAZUH_HOME}/logs/ossec.log 2>/dev/null || true
+    sleep 10
+    exit 1
 fi

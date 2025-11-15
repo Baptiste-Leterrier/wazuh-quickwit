@@ -66,6 +66,7 @@ WORKDIR /build
 # Copy only necessary files for build
 COPY src/ /build/src/
 COPY etc/ /build/etc/
+COPY ruleset/ /build/ruleset/
 COPY framework/ /build/framework/
 COPY api/ /build/api/
 COPY VERSION.json /build/
@@ -221,6 +222,9 @@ COPY --from=builder /var/ossec /var/ossec
 # Copy framework (Python SDK)
 COPY --from=builder /build/framework /var/ossec/framework
 
+# NOTE: Use the ossec.conf from the builder stage (Wazuh's default)
+# Do not override with custom ossec.conf to avoid XML parsing issues
+
 
 
 # Create Wazuh user and groups if they don't exist
@@ -265,9 +269,6 @@ RUN chown -R ossec:ossec /var/ossec && \
     # Give group write permissions to /var/run so wazuh user can create PID files
     chmod 770 /var/ossec/var/run && \
     chmod +x /var/ossec/bin/* 2>/dev/null || true && \
-    # Ensure decoder and rules files have proper permissions
-    chmod 640 /var/ossec/etc/decoders/*.xml 2>/dev/null || true && \
-    chmod 640 /var/ossec/etc/rules/*.xml 2>/dev/null || true && \
     # Ensure API and framework directories have proper group access
     find /var/ossec/api -type d -exec chmod g+rx {} \; 2>/dev/null || true && \
     find /var/ossec/framework -type d -exec chmod g+rx {} \; 2>/dev/null || true
@@ -278,11 +279,25 @@ COPY docker/scripts/healthcheck.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
 
 
+# NOTE: Lists are already in /var/ossec/etc/lists from the builder stage
+# They are installed by the Wazuh install.sh script
+
 # Explicitly copy custom decoder and rules files from source
 # These are user-customizable files that should be preserved
 COPY etc/decoders/ /var/ossec/etc/decoders/
 COPY etc/rules/ /var/ossec/etc/rules/
 
+# Fix permissions on decoder, rules, and lists files so ossec user can read them
+RUN chmod -R 755 /var/ossec/etc/decoders /var/ossec/etc/rules /var/ossec/ruleset 2>/dev/null || true && \
+    chmod -R 755 /var/ossec/etc/lists 2>/dev/null || true && \
+    chmod -R 644 /var/ossec/etc/decoders/* /var/ossec/etc/rules/* /var/ossec/ruleset/decoders/* /var/ossec/ruleset/rules/* 2>/dev/null || true && \
+    chmod -R 644 /var/ossec/etc/lists/* 2>/dev/null || true && \
+    find /var/ossec/etc/decoders -type d -exec chmod 755 {} \; 2>/dev/null || true && \
+    find /var/ossec/etc/rules -type d -exec chmod 755 {} \; 2>/dev/null || true && \
+    find /var/ossec/etc/lists -type d -exec chmod 755 {} \; 2>/dev/null || true && \
+    find /var/ossec/ruleset -type d -exec chmod 755 {} \; 2>/dev/null || true && \
+    chown -R ossec:ossec /var/ossec/etc/decoders /var/ossec/etc/rules /var/ossec/ruleset 2>/dev/null || true && \
+    chown -R ossec:ossec /var/ossec/etc/lists 2>/dev/null || true
 
 # Expose ports
 EXPOSE 55000 1514/tcp 1514/udp 1515 1516
@@ -291,11 +306,17 @@ EXPOSE 55000 1514/tcp 1514/udp 1515 1516
 HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
     CMD /usr/local/bin/healthcheck.sh
 
+# Clean up any stale PID files and state files from the builder stage
+RUN rm -f /var/ossec/var/run/*.pid* /var/ossec/var/run/*.state /var/ossec/var/run/*.failed 2>/dev/null || true && \
+    rm -f /var/ossec/.docker_initialized 2>/dev/null || true
+
 # Set working directory
 WORKDIR /var/ossec
 
 # Volume for persistent data
-VOLUME ["/var/ossec/logs", "/var/ossec/etc", "/var/ossec/queue", "/var/ossec/stats"]
+# NOTE: Only declare volumes for data directories that need persistence
+# Do NOT include /var/ossec/etc here as it would shadow built-in config/lists
+VOLUME ["/var/ossec/logs", "/var/ossec/queue", "/var/ossec/stats"]
 
 # Entrypoint
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
