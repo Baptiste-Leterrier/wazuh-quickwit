@@ -185,8 +185,9 @@ init_socket_dir() {
     chown ossec:ossec "${SOCKET_DIR}"
 
     # Clean up any stale socket files from previous runs
-    if [ -S "${SOCKET_DIR}/wdb" ]; then
-        log_warning "Removing stale socket file: ${SOCKET_DIR}/wdb"
+    # Remove the wdb file regardless of type (socket, regular file, etc.)
+    if [ -e "${SOCKET_DIR}/wdb" ]; then
+        log_warning "Removing stale wdb file: ${SOCKET_DIR}/wdb"
         rm -f "${SOCKET_DIR}/wdb"
     fi
 
