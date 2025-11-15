@@ -216,6 +216,14 @@ log_info "Cleaning up stale PID files..."
 rm -f ${WAZUH_HOME}/var/run/*.pid.* 2>/dev/null || true
 rm -f ${WAZUH_HOME}/var/run/*.failed 2>/dev/null || true
 
+# Ensure API directories exist with correct permissions
+log_info "Setting up API directories and permissions..."
+mkdir -p ${WAZUH_HOME}/api/configuration/ssl 2>/dev/null || true
+mkdir -p ${WAZUH_HOME}/api/configuration/security 2>/dev/null || true
+chown -R root:ossec ${WAZUH_HOME}/api/configuration 2>/dev/null || true
+chmod -R 770 ${WAZUH_HOME}/api/configuration 2>/dev/null || true
+log_success "API directories configured"
+
 # Start Wazuh
 log_info "Starting Wazuh Manager..."
 
@@ -249,6 +257,17 @@ else
     # Check daemon status
     log_info "Checking Wazuh service status..."
     ${WAZUH_HOME}/bin/wazuh-control status 2>&1 || true
+
+    # Check if API failed to start (optional service)
+    if [ -f "${WAZUH_HOME}/var/run/wazuh-apid.failed" ]; then
+        log_warning "Wazuh API (wazuh-apid) failed to start - this is optional and won't block other services"
+        log_info "Check ${WAZUH_HOME}/logs/api.log for details"
+        # Show last 20 lines of API log if it exists
+        if [ -f "${WAZUH_HOME}/logs/api.log" ]; then
+            log_info "Last 20 lines of API log:"
+            tail -20 ${WAZUH_HOME}/logs/api.log 2>/dev/null || true
+        fi
+    fi
 
     # Check if any Wazuh process is running (including modulesd which may be starting)
     log_info "Waiting for Wazuh daemons to fully initialize..."
