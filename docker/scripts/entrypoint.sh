@@ -62,6 +62,14 @@ mkdir -p \
     ${WAZUH_HOME}/etc/rules
 
 log_success "Directories created successfully"
+
+# Clean custom decoder/rules directories to prevent decoder plugin errors
+# These directories are for user customization, but can cause startup failures if
+# they contain malformed or incompatible files from previous runs
+log_info "Cleaning custom decoder and rules directories..."
+rm -f ${WAZUH_HOME}/etc/decoders/* 2>/dev/null || true
+rm -f ${WAZUH_HOME}/etc/rules/* 2>/dev/null || true
+log_success "Custom directories cleaned"
 log_info "Verifying critical directories exist..."
 log_info "  - ${WAZUH_HOME}/var/run: $([ -d "${WAZUH_HOME}/var/run" ] && echo "EXISTS" || echo "MISSING")"
 log_info "  - ${WAZUH_HOME}/logs: $([ -d "${WAZUH_HOME}/logs" ] && echo "EXISTS" || echo "MISSING")"
