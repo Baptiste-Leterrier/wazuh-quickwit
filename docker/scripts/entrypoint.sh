@@ -250,7 +250,34 @@ else
     # Start wazuh-db first - it's required by other services
     log_info "Starting wazuh-db (internal database) first - required by other services..."
 
+    # First, verify the wazuh-db binary exists and is executable
+    if [ ! -f "${WAZUH_HOME}/bin/wazuh-db" ]; then
+        log_error "wazuh-db binary not found at ${WAZUH_HOME}/bin/wazuh-db"
+        log_error "Listing ${WAZUH_HOME}/bin directory:"
+        ls -la "${WAZUH_HOME}/bin/" 2>&1 || true
+        exit 1
+    fi
+
+    if [ ! -x "${WAZUH_HOME}/bin/wazuh-db" ]; then
+        log_error "wazuh-db binary exists but is not executable"
+        ls -la "${WAZUH_HOME}/bin/wazuh-db" 2>&1 || true
+        log_info "Attempting to make it executable..."
+        chmod +x "${WAZUH_HOME}/bin/wazuh-db" || true
+    fi
+
+    # Check for shared library dependencies
+    log_info "Checking wazuh-db dependencies..."
+    if command -v ldd > /dev/null 2>&1; then
+        ldd "${WAZUH_HOME}/bin/wazuh-db" 2>&1 | tee /tmp/wazuh-db-ldd.log || true
+        if grep -q "not found" /tmp/wazuh-db-ldd.log; then
+            log_error "Missing shared library dependencies detected:"
+            grep "not found" /tmp/wazuh-db-ldd.log
+            log_error "Please check the Dockerfile runtime dependencies"
+        fi
+    fi
+
     # Try to start wazuh-db and capture any immediate errors
+    log_info "Attempting to start wazuh-db..."
     ${WAZUH_HOME}/bin/wazuh-db > /tmp/wazuh-db-startup.log 2>&1 &
     WAZUH_DB_PID=$!
 
@@ -260,10 +287,30 @@ else
     # Check if the process is still running
     if ! kill -0 ${WAZUH_DB_PID} 2>/dev/null; then
         log_error "Failed to start wazuh-db process (PID: ${WAZUH_DB_PID} exited immediately)"
+
+        # Show binary info
+        log_error "Binary information:"
+        ls -la "${WAZUH_HOME}/bin/wazuh-db" 2>&1 || true
+        file "${WAZUH_HOME}/bin/wazuh-db" 2>&1 || true
+
+        # Show startup output
         if [ -f /tmp/wazuh-db-startup.log ]; then
             log_error "wazuh-db startup output:"
             cat /tmp/wazuh-db-startup.log
+        else
+            log_error "No startup log file found at /tmp/wazuh-db-startup.log"
         fi
+
+        # Show dependencies if ldd was run
+        if [ -f /tmp/wazuh-db-ldd.log ]; then
+            log_error "Shared library dependencies:"
+            cat /tmp/wazuh-db-ldd.log
+        fi
+
+        # Try to run wazuh-db with -V to get version (if it works)
+        log_error "Attempting to run wazuh-db -V for diagnostics..."
+        "${WAZUH_HOME}/bin/wazuh-db" -V 2>&1 || true
+
         exit 1
     fi
 
