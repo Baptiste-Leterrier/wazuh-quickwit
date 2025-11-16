@@ -249,7 +249,16 @@ else
 
     # Start wazuh-db first - it's required by other services
     log_info "Starting wazuh-db (internal database) first - required by other services..."
-    ${WAZUH_HOME}/bin/wazuh-db &
+
+    # Try to start wazuh-db and capture any immediate errors
+    if ! ${WAZUH_HOME}/bin/wazuh-db > /tmp/wazuh-db-startup.log 2>&1 & then
+        log_error "Failed to start wazuh-db process"
+        cat /tmp/wazuh-db-startup.log 2>/dev/null || true
+        exit 1
+    fi
+
+    WAZUH_DB_PID=$!
+    log_info "wazuh-db started with PID: ${WAZUH_DB_PID}"
 
     # Wait for wazuh-db socket to be created
     log_info "Waiting for wazuh-db socket to be created..."
@@ -260,13 +269,47 @@ else
             log_success "wazuh-db socket created successfully"
             break
         fi
+
+        # Check if wazuh-db process is still running
+        if ! kill -0 ${WAZUH_DB_PID} 2>/dev/null; then
+            log_error "wazuh-db process (PID: ${WAZUH_DB_PID}) has exited unexpectedly"
+            log_error "Checking logs for errors..."
+
+            # Show startup log
+            if [ -f /tmp/wazuh-db-startup.log ]; then
+                log_error "wazuh-db startup output:"
+                cat /tmp/wazuh-db-startup.log
+            fi
+
+            # Show ossec.log if it exists
+            if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
+                log_error "Last 50 lines of ossec.log:"
+                tail -50 "${WAZUH_HOME}/logs/ossec.log" 2>/dev/null || true
+            fi
+
+            exit 1
+        fi
+
         SOCKET_WAIT_COUNT=$((SOCKET_WAIT_COUNT + 1))
         if [ $SOCKET_WAIT_COUNT -lt $SOCKET_WAIT_MAX ]; then
             sleep 1
         else
             log_error "wazuh-db socket was not created within ${SOCKET_WAIT_MAX} seconds"
-            log_error "Checking if wazuh-db process is running..."
-            pgrep -a wazuh-db || log_error "wazuh-db process not found"
+            log_error "wazuh-db process is running but socket not created"
+            log_error "Checking logs..."
+
+            # Show startup log
+            if [ -f /tmp/wazuh-db-startup.log ]; then
+                log_error "wazuh-db startup output:"
+                cat /tmp/wazuh-db-startup.log
+            fi
+
+            # Show ossec.log
+            if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
+                log_error "Last 50 lines of ossec.log:"
+                tail -50 "${WAZUH_HOME}/logs/ossec.log" 2>/dev/null || true
+            fi
+
             exit 1
         fi
     done
