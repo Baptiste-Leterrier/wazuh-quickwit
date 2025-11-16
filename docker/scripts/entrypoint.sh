@@ -251,13 +251,22 @@ else
     log_info "Starting wazuh-db (internal database) first - required by other services..."
 
     # Try to start wazuh-db and capture any immediate errors
-    if ! ${WAZUH_HOME}/bin/wazuh-db > /tmp/wazuh-db-startup.log 2>&1 & then
-        log_error "Failed to start wazuh-db process"
-        cat /tmp/wazuh-db-startup.log 2>/dev/null || true
+    ${WAZUH_HOME}/bin/wazuh-db > /tmp/wazuh-db-startup.log 2>&1 &
+    WAZUH_DB_PID=$!
+
+    # Give it a moment to start
+    sleep 1
+
+    # Check if the process is still running
+    if ! kill -0 ${WAZUH_DB_PID} 2>/dev/null; then
+        log_error "Failed to start wazuh-db process (PID: ${WAZUH_DB_PID} exited immediately)"
+        if [ -f /tmp/wazuh-db-startup.log ]; then
+            log_error "wazuh-db startup output:"
+            cat /tmp/wazuh-db-startup.log
+        fi
         exit 1
     fi
 
-    WAZUH_DB_PID=$!
     log_info "wazuh-db started with PID: ${WAZUH_DB_PID}"
 
     # Wait for wazuh-db socket to be created
