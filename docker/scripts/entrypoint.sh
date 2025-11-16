@@ -143,6 +143,14 @@ log_info "Configuration file permissions set to 644 (rw-r--r--)"
 
 # Verify var directory permissions - critical for chrooted processes
 log_info "Verifying ${WAZUH_HOME}/var and subdirectory permissions..."
+
+# CRITICAL: Ensure the chroot root directory itself is accessible
+# After chroot to /var/ossec, the process sees /var/ossec as /
+# It must be able to traverse from / to access subdirectories
+log_info "Setting permissions on chroot root directory: ${WAZUH_HOME}"
+chmod 755 ${WAZUH_HOME}
+chown ossec:ossec ${WAZUH_HOME}
+
 # Ensure parent 'var' directory is traversable by ossec user after chroot
 # Using 755 (rwxr-xr-x) allows ossec user (as owner) to traverse into subdirectories
 chmod 755 ${WAZUH_HOME}/var
@@ -154,10 +162,19 @@ chown ossec:ossec ${WAZUH_HOME}/var/run
 chmod 770 ${WAZUH_HOME}/var/db
 chown ossec:ossec ${WAZUH_HOME}/var/db
 
+# Create /run symlink to /var/run in case wazuh-db tries to use /run
+# Some systems use /run instead of /var/run for runtime files
+if [ ! -e "${WAZUH_HOME}/run" ]; then
+    ln -s var/run ${WAZUH_HOME}/run
+    log_info "Created symlink: ${WAZUH_HOME}/run -> var/run"
+fi
+
 log_info "Directory permissions:"
+ls -lad ${WAZUH_HOME}
 ls -lad ${WAZUH_HOME}/var
 ls -lad ${WAZUH_HOME}/var/run
 ls -lad ${WAZUH_HOME}/var/db
+ls -lad ${WAZUH_HOME}/run 2>/dev/null || true
 
 # Test write access as ossec user (simulates what happens after chroot+setuid)
 log_info "Testing write access to ${WAZUH_HOME}/var/run as ossec user..."
@@ -171,6 +188,15 @@ else
     ls -la ${WAZUH_HOME}/var
     ls -la ${WAZUH_HOME}/var/run
     exit 1
+fi
+
+# Test write access in a chroot environment (more realistic test)
+log_info "Testing write access inside chroot environment..."
+if chroot ${WAZUH_HOME} su -s /bin/sh ossec -c "touch var/run/.test-chroot && rm -f var/run/.test-chroot" 2>&1; then
+    log_success "Chroot write access test passed"
+else
+    log_warning "Chroot write access test failed (this may be due to missing /bin/sh inside chroot)"
+    log_info "This is a pre-flight test - actual wazuh-db may still work"
 fi
 
 # Initialize databases before starting services
