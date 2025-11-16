@@ -276,9 +276,9 @@ else
         fi
     fi
 
-    # Try to start wazuh-db and capture any immediate errors
-    log_info "Attempting to start wazuh-db..."
-    ${WAZUH_HOME}/bin/wazuh-db > /tmp/wazuh-db-startup.log 2>&1 &
+    # Try to start wazuh-db with debug logging and capture any immediate errors
+    log_info "Attempting to start wazuh-db with debug logging (-dd)..."
+    ${WAZUH_HOME}/bin/wazuh-db -dd > /tmp/wazuh-db-startup.log 2>&1 &
     WAZUH_DB_PID=$!
 
     # Give it a moment to start
@@ -291,14 +291,25 @@ else
         # Show binary info
         log_error "Binary information:"
         ls -la "${WAZUH_HOME}/bin/wazuh-db" 2>&1 || true
-        file "${WAZUH_HOME}/bin/wazuh-db" 2>&1 || true
 
-        # Show startup output
+        # Show startup output (with debug logging)
         if [ -f /tmp/wazuh-db-startup.log ]; then
-            log_error "wazuh-db startup output:"
+            log_error "wazuh-db startup output (with -dd debug flags):"
             cat /tmp/wazuh-db-startup.log
         else
             log_error "No startup log file found at /tmp/wazuh-db-startup.log"
+        fi
+
+        # Check for wazuh-db log file
+        if [ -f "${WAZUH_HOME}/logs/wazuh-db.log" ]; then
+            log_error "wazuh-db.log contents:"
+            cat "${WAZUH_HOME}/logs/wazuh-db.log"
+        fi
+
+        # Check ossec.log for wazuh-db errors
+        if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
+            log_error "Last 50 lines of ossec.log:"
+            tail -50 "${WAZUH_HOME}/logs/ossec.log" 2>/dev/null || true
         fi
 
         # Show dependencies if ldd was run
@@ -331,10 +342,16 @@ else
             log_error "wazuh-db process (PID: ${WAZUH_DB_PID}) has exited unexpectedly"
             log_error "Checking logs for errors..."
 
-            # Show startup log
+            # Show startup log with debug output
             if [ -f /tmp/wazuh-db-startup.log ]; then
-                log_error "wazuh-db startup output:"
+                log_error "wazuh-db startup output (with -dd debug flags):"
                 cat /tmp/wazuh-db-startup.log
+            fi
+
+            # Check for wazuh-db log file
+            if [ -f "${WAZUH_HOME}/logs/wazuh-db.log" ]; then
+                log_error "wazuh-db.log contents:"
+                cat "${WAZUH_HOME}/logs/wazuh-db.log"
             fi
 
             # Show ossec.log if it exists
@@ -354,10 +371,16 @@ else
             log_error "wazuh-db process is running but socket not created"
             log_error "Checking logs..."
 
-            # Show startup log
+            # Show startup log with debug output
             if [ -f /tmp/wazuh-db-startup.log ]; then
-                log_error "wazuh-db startup output:"
+                log_error "wazuh-db startup output (with -dd debug flags):"
                 cat /tmp/wazuh-db-startup.log
+            fi
+
+            # Check for wazuh-db log file
+            if [ -f "${WAZUH_HOME}/logs/wazuh-db.log" ]; then
+                log_error "wazuh-db.log contents:"
+                cat "${WAZUH_HOME}/logs/wazuh-db.log"
             fi
 
             # Show ossec.log
