@@ -276,6 +276,7 @@ fi
 
 # Cleanup stale PID files from previous runs (but not state files)
 log_info "Cleaning up stale PID files..."
+rm -f ${WAZUH_HOME}/var/run/*.pid 2>/dev/null || true
 rm -f ${WAZUH_HOME}/var/run/*.pid.* 2>/dev/null || true
 rm -f ${WAZUH_HOME}/var/run/*.failed 2>/dev/null || true
 
@@ -342,6 +343,17 @@ EOF
         chown ossec:ossec "${WAZUH_HOME}/etc/internal_options.conf"
         chmod 640 "${WAZUH_HOME}/etc/internal_options.conf"
     fi
+
+    # CRITICAL: Re-verify and fix var/run permissions just before starting wazuh-db
+    # This ensures any Docker volume mounts or permission changes haven't affected it
+    log_info "Final verification of var/run permissions before wazuh-db start..."
+    mkdir -p "${WAZUH_HOME}/var/run" 2>/dev/null || true
+    chmod 770 "${WAZUH_HOME}/var/run"
+    chown ossec:ossec "${WAZUH_HOME}/var/run"
+
+    # Show what files exist in var/run
+    log_info "Contents of ${WAZUH_HOME}/var/run:"
+    ls -la "${WAZUH_HOME}/var/run" 2>&1 || true
 
     # First, verify the wazuh-db binary exists and is executable
     if [ ! -f "${WAZUH_HOME}/bin/wazuh-db" ]; then
