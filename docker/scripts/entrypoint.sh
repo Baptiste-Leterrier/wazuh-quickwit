@@ -141,12 +141,37 @@ find ${WAZUH_HOME}/etc/lists -type f 2>/dev/null | xargs chmod 644 2>/dev/null |
 chown -R ossec:ossec ${WAZUH_HOME}/etc 2>/dev/null || true
 log_info "Configuration file permissions set to 644 (rw-r--r--)"
 
-# Verify var/run permissions specifically
-log_info "Verifying ${WAZUH_HOME}/var/run permissions..."
+# Verify var directory permissions - critical for chrooted processes
+log_info "Verifying ${WAZUH_HOME}/var and subdirectory permissions..."
+# Ensure parent 'var' directory is traversable by ossec user after chroot
+# Using 755 (rwxr-xr-x) allows ossec user (as owner) to traverse into subdirectories
+chmod 755 ${WAZUH_HOME}/var
+chown ossec:ossec ${WAZUH_HOME}/var
+# Set permissions on var/run for PID files that wazuh-db creates after chroot
 chmod 770 ${WAZUH_HOME}/var/run
 chown ossec:ossec ${WAZUH_HOME}/var/run
-ls -la ${WAZUH_HOME}/var/run
-log_success "Permissions verified for ${WAZUH_HOME}/var/run"
+# Set permissions on var/db
+chmod 770 ${WAZUH_HOME}/var/db
+chown ossec:ossec ${WAZUH_HOME}/var/db
+
+log_info "Directory permissions:"
+ls -lad ${WAZUH_HOME}/var
+ls -lad ${WAZUH_HOME}/var/run
+ls -lad ${WAZUH_HOME}/var/db
+
+# Test write access as ossec user (simulates what happens after chroot+setuid)
+log_info "Testing write access to ${WAZUH_HOME}/var/run as ossec user..."
+if su -s /bin/sh ossec -c "touch ${WAZUH_HOME}/var/run/.test-write && rm -f ${WAZUH_HOME}/var/run/.test-write" 2>&1; then
+    log_success "Write access test passed for ${WAZUH_HOME}/var/run"
+else
+    log_error "Write access test FAILED for ${WAZUH_HOME}/var/run"
+    log_error "ossec user cannot write to var/run directory"
+    log_error "This will cause wazuh-db to fail when creating PID files after chroot"
+    log_error "Current permissions:"
+    ls -la ${WAZUH_HOME}/var
+    ls -la ${WAZUH_HOME}/var/run
+    exit 1
+fi
 
 # Initialize databases before starting services
 log_info "Initializing Wazuh databases..."
