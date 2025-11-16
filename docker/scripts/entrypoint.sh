@@ -166,6 +166,7 @@ chown ossec:ossec ${WAZUH_HOME}/var/db
 # Some systems use /run instead of /var/run for runtime files
 if [ ! -e "${WAZUH_HOME}/run" ]; then
     ln -s var/run ${WAZUH_HOME}/run
+    chown -h ossec:ossec ${WAZUH_HOME}/run  # -h flag changes symlink itself, not target
     log_info "Created symlink: ${WAZUH_HOME}/run -> var/run"
 fi
 
@@ -354,6 +355,37 @@ EOF
     # Show what files exist in var/run
     log_info "Contents of ${WAZUH_HOME}/var/run:"
     ls -la "${WAZUH_HOME}/var/run" 2>&1 || true
+
+    # CRITICAL: Fix log file ownership and permissions before wazuh-db starts
+    # wazuh-db initially runs as root, writes to logs, then switches to ossec user
+    # If log files are owned by root with restrictive permissions, ossec can't write
+    log_info "Ensuring log files are writable by ossec user..."
+
+    # Ensure logs directory has correct ownership and permissions
+    chown ossec:ossec "${WAZUH_HOME}/logs"
+    chmod 755 "${WAZUH_HOME}/logs"
+
+    # If ossec.log already exists, fix its ownership and permissions
+    if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
+        log_info "Fixing ownership and permissions for existing ossec.log"
+        chown ossec:ossec "${WAZUH_HOME}/logs/ossec.log"
+        chmod 660 "${WAZUH_HOME}/logs/ossec.log"
+    else
+        # Pre-create the log file with correct ownership to prevent root from creating it
+        log_info "Pre-creating ossec.log with ossec ownership"
+        touch "${WAZUH_HOME}/logs/ossec.log"
+        chown ossec:ossec "${WAZUH_HOME}/logs/ossec.log"
+        chmod 660 "${WAZUH_HOME}/logs/ossec.log"
+    fi
+
+    # Fix ownership of all other log files too
+    if ls "${WAZUH_HOME}/logs"/*.log > /dev/null 2>&1; then
+        chown ossec:ossec "${WAZUH_HOME}/logs"/*.log
+        chmod 660 "${WAZUH_HOME}/logs"/*.log
+    fi
+
+    log_info "Log file permissions:"
+    ls -la "${WAZUH_HOME}/logs/" 2>&1 | head -20 || true
 
     # First, verify the wazuh-db binary exists and is executable
     if [ ! -f "${WAZUH_HOME}/bin/wazuh-db" ]; then
