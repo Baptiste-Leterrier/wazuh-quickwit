@@ -320,7 +320,7 @@ else
 
         # Try to run wazuh-db with -V to get version (if it works)
         log_error "Attempting to run wazuh-db -V for diagnostics..."
-        "${WAZUH_HOME}/bin/wazuh-db" -V 2>&1 || true
+        "${WAZUH_HOME}/bin/wazuh-db" -d -d 2>&1 || true
 
         exit 1
     fi
