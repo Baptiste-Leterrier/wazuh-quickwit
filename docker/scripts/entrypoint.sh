@@ -250,6 +250,48 @@ else
     # Start wazuh-db first - it's required by other services
     log_info "Starting wazuh-db (internal database) first - required by other services..."
 
+    # Check for configuration file
+    log_info "Verifying wazuh-db prerequisites..."
+    if [ ! -f "${WAZUH_HOME}/etc/ossec.conf" ]; then
+        log_error "Configuration file not found: ${WAZUH_HOME}/etc/ossec.conf"
+        log_error "This file is required for wazuh-db to start"
+        exit 1
+    else
+        log_info "Configuration file exists: ${WAZUH_HOME}/etc/ossec.conf"
+        # Check if file is readable by ossec user
+        if ! su -s /bin/sh ossec -c "test -r ${WAZUH_HOME}/etc/ossec.conf" 2>/dev/null; then
+            log_error "Configuration file is not readable by ossec user"
+            ls -la "${WAZUH_HOME}/etc/ossec.conf"
+            chmod 644 "${WAZUH_HOME}/etc/ossec.conf" || true
+        fi
+    fi
+
+    # Verify database directories exist and have correct permissions
+    log_info "Verifying database directories..."
+    for db_dir in "${WAZUH_HOME}/queue/db" "${WAZUH_HOME}/var/db"; do
+        if [ ! -d "$db_dir" ]; then
+            log_warning "Database directory missing: $db_dir, creating..."
+            mkdir -p "$db_dir"
+            chown ossec:ossec "$db_dir"
+            chmod 750 "$db_dir"
+        else
+            log_info "Database directory exists: $db_dir"
+            ls -la "$db_dir" || true
+        fi
+    done
+
+    # Verify internal_options.conf exists (required for debug logging)
+    if [ ! -f "${WAZUH_HOME}/etc/internal_options.conf" ]; then
+        log_warning "internal_options.conf not found - creating minimal version"
+        cat > "${WAZUH_HOME}/etc/internal_options.conf" <<EOF
+# Minimal internal_options.conf
+# This file is auto-generated if missing
+wazuh_db.debug=2
+EOF
+        chown ossec:ossec "${WAZUH_HOME}/etc/internal_options.conf"
+        chmod 640 "${WAZUH_HOME}/etc/internal_options.conf"
+    fi
+
     # First, verify the wazuh-db binary exists and is executable
     if [ ! -f "${WAZUH_HOME}/bin/wazuh-db" ]; then
         log_error "wazuh-db binary not found at ${WAZUH_HOME}/bin/wazuh-db"
@@ -277,12 +319,30 @@ else
     fi
 
     # Try to start wazuh-db with debug logging and capture any immediate errors
-    log_info "Attempting to start wazuh-db with debug logging (-dd)..."
-    ${WAZUH_HOME}/bin/wazuh-db -dd > /tmp/wazuh-db-startup.log 2>&1 &
-    WAZUH_DB_PID=$!
+    # First, let's try with strace to see exactly where it's failing
+    log_info "Attempting to start wazuh-db with strace diagnostics..."
+    if command -v strace > /dev/null 2>&1; then
+        strace -f -o /tmp/wazuh-db-strace.log ${WAZUH_HOME}/bin/wazuh-db -dd > /tmp/wazuh-db-startup.log 2>&1 &
+        WAZUH_DB_PID=$!
+        log_info "wazuh-db started with strace (PID: ${WAZUH_DB_PID})"
+    else
+        log_warning "strace not available, starting without syscall tracing"
+        ${WAZUH_HOME}/bin/wazuh-db -dd > /tmp/wazuh-db-startup.log 2>&1 &
+        WAZUH_DB_PID=$!
+    fi
 
-    # Give it a moment to start
-    sleep 1
+    # Give it more time to start and capture any crash
+    log_info "Waiting for wazuh-db to initialize (PID: ${WAZUH_DB_PID})..."
+    sleep 2
+
+    # Try to get the exit code if process has exited
+    WAZUH_DB_EXIT_CODE=0
+    wait $WAZUH_DB_PID 2>/dev/null || WAZUH_DB_EXIT_CODE=$?
+
+    # If wait succeeds immediately, the process has already exited
+    if [ $WAZUH_DB_EXIT_CODE -ne 0 ] && [ $WAZUH_DB_EXIT_CODE -ne 127 ]; then
+        log_error "wazuh-db exited with code: $WAZUH_DB_EXIT_CODE"
+    fi
 
     # Check if the process is still running
     if ! kill -0 ${WAZUH_DB_PID} 2>/dev/null; then
@@ -316,6 +376,23 @@ else
         if [ -f /tmp/wazuh-db-ldd.log ]; then
             log_error "Shared library dependencies:"
             cat /tmp/wazuh-db-ldd.log
+        fi
+
+        # Show strace output if available
+        if [ -f /tmp/wazuh-db-strace.log ]; then
+            log_error "System call trace (last 100 lines):"
+            tail -100 /tmp/wazuh-db-strace.log 2>&1 || true
+            log_error "Looking for failed system calls in strace..."
+            grep -E "(ENOENT|EACCES|EPERM|ENOTDIR|ESRCH|SIGSEGV|SIGABRT|error|failed)" /tmp/wazuh-db-strace.log 2>&1 | tail -20 || true
+        fi
+
+        # Check for core dumps
+        if [ -f /var/ossec/core ] || [ -f core ]; then
+            log_error "Core dump detected!"
+            if command -v gdb > /dev/null 2>&1; then
+                log_error "Getting backtrace from core dump..."
+                gdb -batch -ex "bt" ${WAZUH_HOME}/bin/wazuh-db /var/ossec/core 2>&1 || gdb -batch -ex "bt" ${WAZUH_HOME}/bin/wazuh-db core 2>&1 || true
+            fi
         fi
 
         # Try to run wazuh-db with -V to get version (if it works)
@@ -358,6 +435,14 @@ else
             if [ -f "${WAZUH_HOME}/logs/ossec.log" ]; then
                 log_error "Last 50 lines of ossec.log:"
                 tail -50 "${WAZUH_HOME}/logs/ossec.log" 2>/dev/null || true
+            fi
+
+            # Show strace output if available
+            if [ -f /tmp/wazuh-db-strace.log ]; then
+                log_error "System call trace (last 100 lines):"
+                tail -100 /tmp/wazuh-db-strace.log 2>&1 || true
+                log_error "Looking for failed system calls in strace..."
+                grep -E "(ENOENT|EACCES|EPERM|ENOTDIR|ESRCH|SIGSEGV|SIGABRT|error|failed)" /tmp/wazuh-db-strace.log 2>&1 | tail -20 || true
             fi
 
             exit 1
