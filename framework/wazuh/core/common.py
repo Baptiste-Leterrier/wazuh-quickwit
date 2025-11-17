@@ -161,8 +161,8 @@ _context_cache = dict()
 token_cache_event = Event()
 _WAZUH_UID = None
 _WAZUH_GID = None
-GROUP_NAME = 'ossec'
-USER_NAME = 'ossec'
+GROUP_NAME = 'wazuh'
+USER_NAME = 'wazuh'
 WAZUH_PATH = find_wazuh_path()
 
 

@@ -99,6 +99,9 @@ if ! getent passwd ossec > /dev/null 2>&1; then
     log_error "User 'ossec' does not exist!"
     exit 1
 fi
+if ! getent passwd wazuh > /dev/null 2>&1; then
+    log_warning "User 'wazuh' does not exist (this may be normal)"
+fi
 if ! getent group ossec > /dev/null 2>&1; then
     log_error "Group 'ossec' does not exist!"
     exit 1
