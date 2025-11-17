@@ -436,9 +436,9 @@ static bool createQuickwitIndexDynamic(const std::string& indexName,
         }
 
         // Log the index configuration for debugging
-        logDebug(IC_NAME, "Creating Quickwit index '%s' with configuration: %s",
-                indexName.c_str(),
-                indexConfig.dump(2).c_str());
+        logDebug2(IC_NAME, "Creating Quickwit index '%s' with configuration: %s",
+                 indexName.c_str(),
+                 indexConfig.dump(2).c_str());
 
         // Create the index via Quickwit REST API
         const std::string createUrl = baseUrl + "/api/v1/indexes";
