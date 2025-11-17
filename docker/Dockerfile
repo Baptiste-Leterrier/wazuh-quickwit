@@ -137,7 +137,7 @@ RUN set -ex && \
     echo "========================================" && \
     echo "Installing Wazuh Framework..." && \
     echo "========================================" && \
-    make install_framework INSTALLDIR=/var/ossec WAZUH_GROUP=wazuh || { \
+    make install_framework INSTALLDIR=/var/ossec WAZUH_GROUP=ossec || { \
         echo "ERROR: Framework installation failed"; \
         exit 1; \
     } && \
@@ -146,7 +146,7 @@ RUN set -ex && \
     echo "Installing Wazuh API..." && \
     echo "========================================" && \
     cd /build/api && \
-    make install INSTALLDIR=/var/ossec WAZUH_GROUP=wazuh || { \
+    make install INSTALLDIR=/var/ossec WAZUH_GROUP=ossec || { \
         echo "ERROR: API installation failed"; \
         exit 1; \
     } && \
@@ -168,8 +168,8 @@ LABEL maintainer="Wazuh Inc." \
 
 # Set environment variables
 ENV WAZUH_HOME=/var/ossec \
-    WAZUH_USER=wazuh \
-    WAZUH_GROUP=wazuh \
+    WAZUH_USER=ossec \
+    WAZUH_GROUP=ossec \
     DEBIAN_FRONTEND=noninteractive \
     TZ=UTC \
     QUICKWIT_HOST=quickwit-server \
@@ -235,15 +235,11 @@ COPY --from=builder /build/ruleset /var/ossec/ruleset
 
 
 # Create Wazuh user and groups if they don't exist
-# Note: Both ossec and wazuh groups are needed because the build stage
-# installs framework/API with WAZUH_GROUP=wazuh
+# Note: All processes now run as ossec user with ossec group
 RUN groupadd -r ossec 2>/dev/null || true && \
-    groupadd -r wazuh 2>/dev/null || true && \
-    useradd -r -g ossec -G wazuh -d /var/ossec -s /sbin/nologin ossec 2>/dev/null || true
+    useradd -r -g ossec -d /var/ossec -s /sbin/nologin ossec 2>/dev/null || true
 
-RUN useradd -r -g wazuh -G ossec,wazuh -d /var/ossec -s /sbin/nologin wazuh 2>/dev/null || true
-RUN getent passwd wazuh
-RUN getent group wazuh
+RUN getent passwd ossec
 RUN getent group ossec
     
 
