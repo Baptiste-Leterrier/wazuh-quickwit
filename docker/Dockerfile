@@ -229,6 +229,9 @@ COPY --from=builder /build/tools /var/ossec/tools
 # Copy ruleset (includes MITRE data)
 COPY --from=builder /build/ruleset /var/ossec/ruleset
 
+# Copy wazuh_modules (includes index templates for inventory and vulnerability scanner)
+COPY --from=builder /build/src/wazuh_modules /var/ossec/wazuh_modules
+
 # NOTE: Use the ossec.conf from the builder stage (Wazuh's default)
 # Do not override with custom ossec.conf to avoid XML parsing issues
 
@@ -285,8 +288,9 @@ RUN chown -R ossec:ossec /var/ossec && \
 # Copy entrypoint, database initialization, and healthcheck scripts
 COPY docker/scripts/entrypoint.sh /usr/local/bin/
 COPY docker/scripts/init-databases.sh /usr/local/bin/
+COPY docker/scripts/init-quickwit-indexes.py /usr/local/bin/
 COPY docker/scripts/healthcheck.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/init-databases.sh /usr/local/bin/healthcheck.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/init-databases.sh /usr/local/bin/init-quickwit-indexes.py /usr/local/bin/healthcheck.sh
 
 
 # NOTE: Lists are already in /var/ossec/etc/lists from the builder stage

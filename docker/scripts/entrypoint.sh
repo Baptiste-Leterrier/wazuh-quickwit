@@ -265,6 +265,24 @@ else
     log_info "If indexing doesn't work, check Quickwit logs"
 fi
 
+# Initialize Quickwit indexes for wazuh-states
+log_info "Initializing Quickwit indexes for wazuh-states..."
+if [ -f "${WAZUH_HOME}/../scripts/init-quickwit-indexes.py" ]; then
+    if command -v python3 > /dev/null 2>&1; then
+        QUICKWIT_HOST=${QUICKWIT_HOST} QUICKWIT_PORT=${QUICKWIT_PORT} python3 "${WAZUH_HOME}/../scripts/init-quickwit-indexes.py" || log_warning "Quickwit index initialization reported issues"
+    else
+        log_warning "Python3 not available, skipping Quickwit index initialization"
+    fi
+elif [ -f "/usr/local/bin/init-quickwit-indexes.py" ]; then
+    if command -v python3 > /dev/null 2>&1; then
+        QUICKWIT_HOST=${QUICKWIT_HOST} QUICKWIT_PORT=${QUICKWIT_PORT} python3 "/usr/local/bin/init-quickwit-indexes.py" || log_warning "Quickwit index initialization reported issues"
+    else
+        log_warning "Python3 not available, skipping Quickwit index initialization"
+    fi
+else
+    log_warning "Quickwit index initialization script not found, skipping..."
+fi
+
 # Initialize Wazuh if first run
 if [ ! -f "${WAZUH_HOME}/.docker_initialized" ]; then
     log_info "First run detected, initializing Wazuh..."
