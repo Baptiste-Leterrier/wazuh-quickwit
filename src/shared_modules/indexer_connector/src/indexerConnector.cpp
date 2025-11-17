@@ -342,12 +342,10 @@ static bool createQuickwitIndexDynamic(const std::string& indexName,
             return "text"; // Default
         };
 
-        // Iterate through the sample document fields
-        for (auto it = sampleDoc.begin(); it != sampleDoc.end(); ++it)
+        // Recursive lambda to build field mappings for nested objects
+        std::function<nlohmann::json(const std::string&, const nlohmann::json&)> buildFieldMapping;
+        buildFieldMapping = [&inferType, &buildFieldMapping](const std::string& fieldName, const nlohmann::json& fieldValue) -> nlohmann::json
         {
-            const std::string& fieldName = it.key();
-            const auto& fieldValue = it.value();
-
             nlohmann::json fieldMapping;
             fieldMapping["name"] = fieldName;
 
@@ -376,7 +374,28 @@ static bool createQuickwitIndexDynamic(const std::string& indexName,
                 fieldMapping["input_formats"] = nlohmann::json::array({"rfc3339", "unix_timestamp"});
             }
 
-            fieldMappings.push_back(fieldMapping);
+            // For object fields, recursively process nested fields
+            if (fieldType == "object" && fieldValue.is_object())
+            {
+                nlohmann::json nestedFieldMappings = nlohmann::json::array();
+                for (auto it = fieldValue.begin(); it != fieldValue.end(); ++it)
+                {
+                    const std::string& nestedFieldName = it.key();
+                    const auto& nestedFieldValue = it.value();
+                    nestedFieldMappings.push_back(buildFieldMapping(nestedFieldName, nestedFieldValue));
+                }
+                fieldMapping["field_mappings"] = nestedFieldMappings;
+            }
+
+            return fieldMapping;
+        };
+
+        // Iterate through the sample document fields
+        for (auto it = sampleDoc.begin(); it != sampleDoc.end(); ++it)
+        {
+            const std::string& fieldName = it.key();
+            const auto& fieldValue = it.value();
+            fieldMappings.push_back(buildFieldMapping(fieldName, fieldValue));
         }
 
         // Add a timestamp field if not present
@@ -415,6 +434,11 @@ static bool createQuickwitIndexDynamic(const std::string& indexName,
         {
             indexConfig["doc_mapping"]["timestamp_field"] = "timestamp";
         }
+
+        // Log the index configuration for debugging
+        logDebug(IC_NAME, "Creating Quickwit index '%s' with configuration: %s",
+                indexName.c_str(),
+                indexConfig.dump(2).c_str());
 
         // Create the index via Quickwit REST API
         const std::string createUrl = baseUrl + "/api/v1/indexes";
