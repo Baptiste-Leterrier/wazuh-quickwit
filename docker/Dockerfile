@@ -323,6 +323,8 @@ RUN rm -f /var/ossec/var/run/*.pid* /var/ossec/var/run/*.state /var/ossec/var/ru
 # Set working directory
 WORKDIR /var/ossec
 
+RUN chown -R wazuh:wazuh /var/ossec
+
 # Volume for persistent data
 # NOTE: Only declare volumes for data directories that need persistence
 # Do NOT include /var/ossec/etc here as it would shadow built-in config/lists
