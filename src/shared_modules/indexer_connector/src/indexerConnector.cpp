@@ -15,6 +15,7 @@
 #include "loggerHelper.h"
 #include "secureCommunication.hpp"
 #include "serverSelector.hpp"
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -33,6 +34,7 @@ constexpr auto ELEMENTS_PER_BULK {25000};
 constexpr auto MINIMAL_ELEMENTS_PER_BULK {5};
 
 constexpr auto HTTP_BAD_REQUEST {400};
+constexpr auto HTTP_NOT_FOUND {404};
 constexpr auto HTTP_CONTENT_LENGTH {413};
 constexpr auto HTTP_VERSION_CONFLICT {409};
 constexpr auto HTTP_TOO_MANY_REQUESTS {429};
@@ -268,6 +270,191 @@ static inline void extractErrorInfo(const std::string& errorBody, std::string& t
     catch (const nlohmann::json::exception&)
     {
         logError(IC_NAME, "Failed to parse error body JSON.");
+    }
+}
+
+/**
+ * @brief Create a Quickwit index dynamically based on sample data
+ * @param indexName The name of the index to create
+ * @param sampleData Sample JSON document to infer schema from
+ * @param baseUrl Base URL of the Quickwit server
+ * @param secureCommunication Secure communication settings
+ * @return true if index was created successfully, false otherwise
+ */
+static bool createQuickwitIndexDynamic(const std::string& indexName,
+                                      const std::string& sampleData,
+                                      const std::string& baseUrl,
+                                      const SecureCommunication& secureCommunication)
+{
+    try
+    {
+        logInfo(IC_NAME, "Attempting to create Quickwit index '%s' dynamically", indexName.c_str());
+
+        // Parse the sample data to understand the schema
+        auto sampleDoc = nlohmann::json::parse(sampleData, nullptr, false);
+        if (sampleDoc.is_discarded() || !sampleDoc.is_object())
+        {
+            logError(IC_NAME, "Failed to parse sample data for index creation");
+            return false;
+        }
+
+        // Build field mappings based on the sample document
+        nlohmann::json fieldMappings = nlohmann::json::array();
+
+        // Lambda to infer Quickwit type from JSON value
+        auto inferType = [](const nlohmann::json& value) -> std::string
+        {
+            if (value.is_string())
+            {
+                const auto& str = value.get_ref<const std::string&>();
+                // Check if it looks like a timestamp
+                if (str.find('T') != std::string::npos && str.find('Z') != std::string::npos)
+                {
+                    return "datetime";
+                }
+                // Check if it looks like an IP address
+                if (str.find('.') != std::string::npos)
+                {
+                    size_t dotCount = std::count(str.begin(), str.end(), '.');
+                    if (dotCount == 3)
+                    {
+                        return "ip"; // Might be an IP
+                    }
+                }
+                return "text";
+            }
+            else if (value.is_number_integer())
+            {
+                return "i64";
+            }
+            else if (value.is_number_float())
+            {
+                return "f64";
+            }
+            else if (value.is_boolean())
+            {
+                return "bool";
+            }
+            else if (value.is_object())
+            {
+                return "object";
+            }
+            return "text"; // Default
+        };
+
+        // Iterate through the sample document fields
+        for (auto it = sampleDoc.begin(); it != sampleDoc.end(); ++it)
+        {
+            const std::string& fieldName = it.key();
+            const auto& fieldValue = it.value();
+
+            nlohmann::json fieldMapping;
+            fieldMapping["name"] = fieldName;
+
+            std::string fieldType = inferType(fieldValue);
+            fieldMapping["type"] = fieldType;
+
+            // Add indexed flag for searchable fields
+            fieldMapping["indexed"] = true;
+
+            // Add fast field for frequently queried types
+            if (fieldType == "text" || fieldType == "i64" || fieldType == "f64" ||
+                fieldType == "ip" || fieldType == "datetime")
+            {
+                fieldMapping["fast"] = true;
+            }
+
+            // For text fields, use raw tokenizer (keyword-like behavior)
+            if (fieldType == "text")
+            {
+                fieldMapping["tokenizer"] = "raw";
+            }
+
+            // For datetime fields, add input formats
+            if (fieldType == "datetime")
+            {
+                fieldMapping["input_formats"] = nlohmann::json::array({"rfc3339", "unix_timestamp"});
+            }
+
+            fieldMappings.push_back(fieldMapping);
+        }
+
+        // Add a timestamp field if not present
+        bool hasTimestamp = false;
+        for (const auto& field : fieldMappings)
+        {
+            if (field["name"] == "timestamp" || field["name"] == "@timestamp")
+            {
+                hasTimestamp = true;
+                break;
+            }
+        }
+
+        if (!hasTimestamp)
+        {
+            nlohmann::json timestampField;
+            timestampField["name"] = "timestamp";
+            timestampField["type"] = "datetime";
+            timestampField["input_formats"] = nlohmann::json::array({"rfc3339", "unix_timestamp"});
+            timestampField["fast"] = true;
+            timestampField["indexed"] = true;
+            fieldMappings.insert(fieldMappings.begin(), timestampField);
+        }
+
+        // Build the Quickwit index configuration
+        nlohmann::json indexConfig;
+        indexConfig["version"] = "0.8";
+        indexConfig["index_id"] = indexName;
+        indexConfig["doc_mapping"]["field_mappings"] = fieldMappings;
+        indexConfig["doc_mapping"]["mode"] = "dynamic"; // Allow fields not explicitly defined
+        indexConfig["indexing_settings"]["commit_timeout_secs"] = 10;
+        indexConfig["indexing_settings"]["resources"]["heap_size"] = "500MB";
+        indexConfig["search_settings"]["default_search_fields"] = nlohmann::json::array();
+
+        if (!hasTimestamp)
+        {
+            indexConfig["doc_mapping"]["timestamp_field"] = "timestamp";
+        }
+
+        // Create the index via Quickwit REST API
+        const std::string createUrl = baseUrl + "/api/v1/indexes";
+        bool created = false;
+
+        const auto onSuccess = [&created, &indexName](const std::string& response)
+        {
+            created = true;
+            logInfo(IC_NAME, "Successfully created Quickwit index '%s'", indexName.c_str());
+        };
+
+        const auto onError = [&indexName](const std::string& error, const long statusCode, const std::string& errorBody)
+        {
+            // If index already exists, that's fine
+            if (statusCode == HTTP_BAD_REQUEST && errorBody.find("already exists") != std::string::npos)
+            {
+                logInfo(IC_NAME, "Index '%s' already exists (created by another process)", indexName.c_str());
+                return;
+            }
+
+            logError(IC_NAME,
+                    "Failed to create index '%s' - status: %ld, error: %s",
+                    indexName.c_str(),
+                    statusCode,
+                    errorBody.c_str());
+        };
+
+        HTTPRequest::instance().post(
+            RequestParametersJson {.url = HttpURL(createUrl),
+                                  .data = indexConfig,
+                                  .secureCommunication = secureCommunication},
+            PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
+            ConfigurationParameters {});
+
+        return created || true; // Return true even if it already exists
+    }
+    catch (const std::exception& e)
+    {
+        logError(IC_NAME, "Exception while creating index '%s': %s", indexName.c_str(), e.what());
+        return false;
     }
 }
 
@@ -1143,9 +1330,42 @@ IndexerConnector::IndexerConnector(
                     }
                 };
 
-                const auto onError = [this, &data, bulkSize](
+                const auto onError = [this, &data, bulkSize, &serverUrl, &secureCommunication](
                                          const std::string& error, const long statusCode, const std::string& errorBody)
                 {
+                    // Handle 404 (index not found) for Quickwit - create index dynamically
+                    if (statusCode == HTTP_NOT_FOUND && m_indexerType == "quickwit")
+                    {
+                        logWarn(IC_NAME,
+                                "Index '%s' not found in Quickwit. Attempting to create it dynamically...",
+                                m_indexName.c_str());
+
+                        // Extract a sample document from the bulk data (Quickwit uses pure NDJSON)
+                        std::string sampleData;
+                        size_t firstNewline = data.find('\n');
+                        if (firstNewline != std::string::npos && firstNewline > 0)
+                        {
+                            sampleData = data.substr(0, firstNewline);
+                        }
+                        else
+                        {
+                            sampleData = data;
+                        }
+
+                        // Try to create the index
+                        if (!sampleData.empty() && createQuickwitIndexDynamic(m_indexName, sampleData, serverUrl, secureCommunication))
+                        {
+                            // Index created successfully, retry the operation
+                            logInfo(IC_NAME, "Index '%s' created, retrying ingest operation", m_indexName.c_str());
+                            throw std::runtime_error("Index created, retrying ingest operation");
+                        }
+                        else
+                        {
+                            logError(IC_NAME, "Failed to create index '%s' dynamically", m_indexName.c_str());
+                            throw std::runtime_error("Failed to create index dynamically");
+                        }
+                    }
+
                     // Handle 4xx errors with detailed logging
                     if (statusCode >= 400 && statusCode < 500)
                     {
