@@ -899,7 +899,17 @@ IndexerConnector::IndexerConnector(
     }
 
     // Initialize publisher.
-    auto selector {std::make_shared<ServerSelector>(config.at("hosts"), timeout, secureCommunication)};
+    // Detect indexer type from config - Quickwit uses /health/livez, OpenSearch uses /_cat/health
+    std::string healthCheckEndpoint = "/_cat/health"; // Default for OpenSearch/Elasticsearch
+    if (config.contains("type"))
+    {
+        const auto& indexerType = config.at("type").get_ref<const std::string&>();
+        if (indexerType == "quickwit")
+        {
+            healthCheckEndpoint = "/health/livez";
+        }
+    }
+    auto selector {std::make_shared<ServerSelector>(config.at("hosts"), timeout, secureCommunication, nullptr, healthCheckEndpoint)};
 
     m_dispatcher = std::make_unique<ThreadDispatchQueue>(
         [this, selector, secureCommunication](std::queue<std::string>& dataQueue)
