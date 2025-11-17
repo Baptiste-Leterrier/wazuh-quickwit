@@ -55,6 +55,7 @@ class EXPORTED IndexerConnector final
     std::unique_ptr<Utils::RocksDBWrapper> m_db;
     std::unique_ptr<ThreadSyncQueue> m_syncQueue;
     std::string m_indexName;
+    std::string m_indexerType; // Type of indexer: "quickwit" or "opensearch" (default)
     std::mutex m_syncMutex;
     std::unique_ptr<ThreadDispatchQueue> m_dispatcher;
     std::unordered_map<std::string, TimePoint> m_lastSync;

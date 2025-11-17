@@ -174,6 +174,7 @@ static void initConfiguration(SecureCommunication& secureCommunication, const nl
         .caRootCertificate(caRootCertificate);
 }
 
+// Elasticsearch/OpenSearch bulk delete format
 static void builderBulkDelete(std::string& bulkData, std::string_view id, std::string_view index)
 {
     bulkData.append(R"({"delete":{"_index":")");
@@ -189,6 +190,7 @@ static void builderDeleteByQuery(nlohmann::json& bulkData, const std::string& ag
     bulkData["query"]["bool"]["filter"]["terms"]["agent.id"].push_back(agentId);
 }
 
+// Elasticsearch/OpenSearch bulk index format
 static void builderBulkIndex(std::string& bulkData, std::string_view id, std::string_view index, std::string_view data)
 {
     bulkData.append(R"({"index":{"_index":")");
@@ -197,6 +199,23 @@ static void builderBulkIndex(std::string& bulkData, std::string_view id, std::st
     bulkData.append(id);
     bulkData.append(R"("}})");
     bulkData.append("\n");
+    bulkData.append(data);
+    bulkData.append("\n");
+}
+
+// Quickwit NDJSON format - just the document, no action/metadata line
+// Quickwit doesn't support deletes via the ingest API, so delete is a no-op
+static void builderQuickwitDelete(std::string& bulkData, std::string_view id, std::string_view index)
+{
+    // Quickwit doesn't support deletes via ingest API - no-op
+    // Documents in Quickwit are immutable; deletion is handled by retention policies
+}
+
+// Quickwit NDJSON format - just the document on a single line
+static void builderQuickwitIndex(std::string& bulkData, std::string_view id, std::string_view index, std::string_view data)
+{
+    // Quickwit uses pure NDJSON format (newline-delimited JSON)
+    // Just append the document data directly
     bulkData.append(data);
     bulkData.append("\n");
 }
@@ -370,7 +389,14 @@ void IndexerConnector::sendBulkReactive(const std::vector<std::pair<std::string,
     {
         if (deleted)
         {
-            builderBulkDelete(bulkData, id, m_indexName);
+            if (m_indexerType == "quickwit")
+            {
+                builderQuickwitDelete(bulkData, id, m_indexName);
+            }
+            else
+            {
+                builderBulkDelete(bulkData, id, m_indexName);
+            }
         }
         else
         {
@@ -379,7 +405,15 @@ void IndexerConnector::sendBulkReactive(const std::vector<std::pair<std::string,
             {
                 throw std::runtime_error("Failed to get data from the database.");
             }
-            builderBulkIndex(bulkData, id, m_indexName, data);
+
+            if (m_indexerType == "quickwit")
+            {
+                builderQuickwitIndex(bulkData, id, m_indexName, data);
+            }
+            else
+            {
+                builderBulkIndex(bulkData, id, m_indexName, data);
+            }
         }
     }
 
@@ -498,7 +532,18 @@ void IndexerConnector::diff(const nlohmann::json& responseJson,
         }
     }
 
-    std::string url = std::string(selector->getNext()) + "/_bulk?refresh=wait_for";
+    // Build URL based on indexer type
+    std::string url;
+    if (m_indexerType == "quickwit")
+    {
+        // Quickwit uses a different endpoint for bulk ingestion
+        url = std::string(selector->getNext()) + "/api/v1/" + m_indexName + "/ingest?commit=auto";
+    }
+    else
+    {
+        // OpenSearch/Elasticsearch bulk endpoint
+        url = std::string(selector->getNext()) + "/_bulk?refresh=wait_for";
+    }
 
     sendBulkReactive(actions, url, secureCommunication);
 }
@@ -782,6 +827,15 @@ void IndexerConnector::initialize(const nlohmann::json& templateData,
         // Not used
     };
 
+    // Quickwit doesn't support Elasticsearch templates and mappings
+    // The index must be created externally with Quickwit's own configuration
+    if (m_indexerType == "quickwit")
+    {
+        logInfo(IC_NAME, "Quickwit indexer detected - skipping template/mapping initialization (index must be pre-created)");
+        m_initialized = true;
+        return;
+    }
+
     // Initialize template.
     HTTPRequest::instance().put(
         RequestParametersJson {.url = HttpURL(std::string(selector->getNext()) + "/_index_template/" + m_indexName + "_template"),
@@ -899,12 +953,13 @@ IndexerConnector::IndexerConnector(
     }
 
     // Initialize publisher.
-    // Detect indexer type from config - Quickwit uses /health/livez, OpenSearch uses /_cat/health
+    // Detect indexer type from config - Quickwit uses different endpoints than OpenSearch/Elasticsearch
+    m_indexerType = "opensearch"; // Default
     std::string healthCheckEndpoint = "/_cat/health"; // Default for OpenSearch/Elasticsearch
     if (config.contains("type"))
     {
-        const auto& indexerType = config.at("type").get_ref<const std::string&>();
-        if (indexerType == "quickwit")
+        m_indexerType = config.at("type").get_ref<const std::string&>();
+        if (m_indexerType == "quickwit")
         {
             healthCheckEndpoint = "/health/livez";
         }
@@ -971,7 +1026,14 @@ IndexerConnector::IndexerConnector(
                             logDebug2(IC_NAME, "Added document for deletion with id: %s.", key.c_str());
                             if (!noIndex)
                             {
-                                builderBulkDelete(bulkData, key, m_indexName);
+                                if (m_indexerType == "quickwit")
+                                {
+                                    builderQuickwitDelete(bulkData, key, m_indexName);
+                                }
+                                else
+                                {
+                                    builderBulkDelete(bulkData, key, m_indexName);
+                                }
                             }
 
                             m_db->delete_(key);
@@ -981,7 +1043,14 @@ IndexerConnector::IndexerConnector(
                     {
                         if (!noIndex)
                         {
-                            builderBulkDelete(bulkData, id, m_indexName);
+                            if (m_indexerType == "quickwit")
+                            {
+                                builderQuickwitDelete(bulkData, id, m_indexName);
+                            }
+                            else
+                            {
+                                builderBulkDelete(bulkData, id, m_indexName);
+                            }
                         }
 
                         m_db->delete_(id);
@@ -992,7 +1061,11 @@ IndexerConnector::IndexerConnector(
                     logDebug2(IC_NAME, "Added document for deletion by query with id: %s.", id.c_str());
                     if (!noIndex)
                     {
-                        builderDeleteByQuery(queryData, id);
+                        // Quickwit doesn't support delete_by_query, skip for Quickwit
+                        if (m_indexerType != "quickwit")
+                        {
+                            builderDeleteByQuery(queryData, id);
+                        }
                     }
 
                     for (const auto& [key, _] : m_db->seek(id))
@@ -1013,7 +1086,14 @@ IndexerConnector::IndexerConnector(
                     const auto dataString = parsedData.at("data").dump();
                     if (!noIndex)
                     {
-                        builderBulkIndex(bulkData, id, m_indexName, dataString);
+                        if (m_indexerType == "quickwit")
+                        {
+                            builderQuickwitIndex(bulkData, id, m_indexName, dataString);
+                        }
+                        else
+                        {
+                            builderBulkIndex(bulkData, id, m_indexName, dataString);
+                        }
                     }
                     m_db->put(id, dataString);
                 }
@@ -1150,14 +1230,33 @@ IndexerConnector::IndexerConnector(
 
             if (!bulkData.empty())
             {
-                const auto url = serverUrl + "/_bulk?refresh=wait_for";
+                // Build URL based on indexer type
+                std::string url;
+                if (m_indexerType == "quickwit")
+                {
+                    // Quickwit uses a different endpoint for bulk ingestion
+                    url = serverUrl + "/api/v1/" + m_indexName + "/ingest?commit=auto";
+                }
+                else
+                {
+                    // OpenSearch/Elasticsearch bulk endpoint
+                    url = serverUrl + "/_bulk?refresh=wait_for";
+                }
                 processData(bulkData, url);
             }
 
             if (!queryData.empty())
             {
-                const auto url = serverUrl + "/" + m_indexName + "/_delete_by_query";
-                processData(queryData.dump(), url);
+                // Quickwit doesn't support delete_by_query, skip for Quickwit
+                if (m_indexerType != "quickwit")
+                {
+                    const auto url = serverUrl + "/" + m_indexName + "/_delete_by_query";
+                    processData(queryData.dump(), url);
+                }
+                else
+                {
+                    logDebug2(IC_NAME, "Skipping delete_by_query operation for Quickwit (not supported)");
+                }
             }
         },
         DATABASE_BASE_PATH + m_indexName,
@@ -1276,6 +1375,13 @@ IndexerConnector::IndexerConnector(
     : m_useSeekDelete(useSeekDelete)
 {
     preInitialization(logFunction, config);
+
+    // Initialize indexer type (even when indexer is disabled)
+    m_indexerType = "opensearch"; // Default
+    if (config.contains("type"))
+    {
+        m_indexerType = config.at("type").get_ref<const std::string&>();
+    }
 
     m_dispatcher = std::make_unique<ThreadDispatchQueue>(
         [this](std::queue<std::string>& dataQueue)
