@@ -1352,8 +1352,32 @@ IndexerConnector::IndexerConnector(
                             sampleData = data;
                         }
 
+                        // Extract base URL (scheme://host:port) from the ingest URL
+                        // url format: http://quickwit:7280/api/v1/<index>/ingest?commit=auto
+                        // We need:   http://quickwit:7280
+                        std::string baseUrl;
+                        size_t apiPos = url.find("/api/v1/");
+                        if (apiPos != std::string::npos)
+                        {
+                            baseUrl = url.substr(0, apiPos);
+                        }
+                        else
+                        {
+                            // Fallback: extract up to the third '/'
+                            size_t firstSlash = url.find("://");
+                            if (firstSlash != std::string::npos)
+                            {
+                                size_t thirdSlash = url.find("/", firstSlash + 3);
+                                baseUrl = (thirdSlash != std::string::npos) ? url.substr(0, thirdSlash) : url;
+                            }
+                            else
+                            {
+                                baseUrl = url;
+                            }
+                        }
+
                         // Try to create the index
-                        if (!sampleData.empty() && createQuickwitIndexDynamic(m_indexName, sampleData, url, secureCommunication))
+                        if (!sampleData.empty() && createQuickwitIndexDynamic(m_indexName, sampleData, baseUrl, secureCommunication))
                         {
                             // Index created successfully, retry the operation
                             logInfo(IC_NAME, "Index '%s' created, retrying ingest operation", m_indexName.c_str());
