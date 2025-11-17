@@ -11,7 +11,7 @@
 
 API_PATH=${INSTALLDIR}/api
 API_PATH_BACKUP=${INSTALLDIR}/~api
-WAZUH_GROUP="ossec"
+WAZUH_GROUP="wazuh"
 
 
 
