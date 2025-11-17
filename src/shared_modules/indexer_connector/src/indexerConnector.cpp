@@ -1330,7 +1330,7 @@ IndexerConnector::IndexerConnector(
                     }
                 };
 
-                const auto onError = [this, &data, bulkSize, &serverUrl, &secureCommunication](
+                const auto onError = [this, &data, bulkSize, &url, &secureCommunication](
                                          const std::string& error, const long statusCode, const std::string& errorBody)
                 {
                     // Handle 404 (index not found) for Quickwit - create index dynamically
@@ -1353,7 +1353,7 @@ IndexerConnector::IndexerConnector(
                         }
 
                         // Try to create the index
-                        if (!sampleData.empty() && createQuickwitIndexDynamic(m_indexName, sampleData, serverUrl, secureCommunication))
+                        if (!sampleData.empty() && createQuickwitIndexDynamic(m_indexName, sampleData, url, secureCommunication))
                         {
                             // Index created successfully, retry the operation
                             logInfo(IC_NAME, "Index '%s' created, retrying ingest operation", m_indexName.c_str());
