@@ -20,8 +20,10 @@
 #include <filesystem>
 #include <fstream>
 #include <grp.h>
+#include <iomanip>
 #include <mutex>
 #include <pwd.h>
+#include <sstream>
 #include <unistd.h>
 
 constexpr auto USER_GROUP {"wazuh"};
@@ -217,9 +219,49 @@ static void builderQuickwitDelete(std::string& bulkData, std::string_view id, st
 static void builderQuickwitIndex(std::string& bulkData, std::string_view id, std::string_view index, std::string_view data)
 {
     // Quickwit uses pure NDJSON format (newline-delimited JSON)
-    // Just append the document data directly
-    bulkData.append(data);
-    bulkData.append("\n");
+    try
+    {
+        // Parse the document
+        auto doc = nlohmann::json::parse(data);
+
+        // Add timestamp field if it doesn't exist
+        if (!doc.contains("timestamp") && !doc.contains("@timestamp"))
+        {
+            // Get current time in RFC3339 format
+            auto now = std::chrono::system_clock::now();
+            auto time_t_now = std::chrono::system_clock::to_time_t(now);
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+
+            std::stringstream ss;
+            ss << std::put_time(std::gmtime(&time_t_now), "%Y-%m-%dT%H:%M:%S");
+            ss << '.' << std::setfill('0') << std::setw(3) << ms.count() << 'Z';
+
+            doc["timestamp"] = ss.str();
+        }
+
+        // Fix process.args if it's an array - convert to JSON string
+        if (doc.contains("process") && doc["process"].is_object())
+        {
+            auto& process = doc["process"];
+            if (process.contains("args") && process["args"].is_array())
+            {
+                // Convert array to JSON string representation
+                process["args"] = process["args"].dump();
+            }
+        }
+
+        // Serialize and append
+        bulkData.append(doc.dump());
+        bulkData.append("\n");
+    }
+    catch (const nlohmann::json::exception& e)
+    {
+        // If JSON parsing fails, append the original data
+        logWarn(IC_NAME, "Failed to parse document for Quickwit index '%s': %s",
+                std::string(index).c_str(), e.what());
+        bulkData.append(data);
+        bulkData.append("\n");
+    }
 }
 
 /**
