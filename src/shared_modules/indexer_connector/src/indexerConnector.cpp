@@ -354,8 +354,59 @@ static bool createQuickwitIndexDynamic(const std::string& indexName,
         // Build field mappings based on the sample document
         nlohmann::json fieldMappings = nlohmann::json::array();
 
+        // Helper lambda to validate if a string is a valid IPv4 address
+        auto isValidIPv4 = [](const std::string& str) -> bool
+        {
+            // Quick pre-check: must have exactly 3 dots and reasonable length
+            if (str.empty() || str.length() > 15 || std::count(str.begin(), str.end(), '.') != 3)
+            {
+                return false;
+            }
+
+            // Split by dots and validate each octet
+            std::istringstream iss(str);
+            std::string octet;
+            int count = 0;
+
+            while (std::getline(iss, octet, '.'))
+            {
+                count++;
+                // Check if octet is empty or has invalid characters
+                if (octet.empty() || octet.length() > 3)
+                {
+                    return false;
+                }
+
+                // Check if all characters are digits
+                for (char c : octet)
+                {
+                    if (!std::isdigit(c))
+                    {
+                        return false;
+                    }
+                }
+
+                // Convert to integer and validate range [0-255]
+                try
+                {
+                    int value = std::stoi(octet);
+                    if (value < 0 || value > 255)
+                    {
+                        return false;
+                    }
+                }
+                catch (...)
+                {
+                    return false;
+                }
+            }
+
+            // Must have exactly 4 octets
+            return count == 4;
+        };
+
         // Lambda to infer Quickwit type from JSON value
-        auto inferType = [](const nlohmann::json& value) -> std::string
+        auto inferType = [&isValidIPv4](const nlohmann::json& value) -> std::string
         {
             if (value.is_string())
             {
@@ -365,14 +416,10 @@ static bool createQuickwitIndexDynamic(const std::string& indexName,
                 {
                     return "datetime";
                 }
-                // Check if it looks like an IP address
-                if (str.find('.') != std::string::npos)
+                // Check if it's a valid IP address
+                if (isValidIPv4(str))
                 {
-                    size_t dotCount = std::count(str.begin(), str.end(), '.');
-                    if (dotCount == 3)
-                    {
-                        return "ip"; // Might be an IP
-                    }
+                    return "ip";
                 }
                 return "text";
             }

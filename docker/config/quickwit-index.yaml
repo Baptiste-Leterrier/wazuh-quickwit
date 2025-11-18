@@ -175,6 +175,11 @@ doc_mapping:
       type: f64
       fast: true
 
+    - name: vulnerability.description
+      type: text
+      tokenizer: default
+      indexed: true
+
     # Compliance fields
     - name: compliance.pci
       type: text
