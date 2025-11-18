@@ -250,6 +250,17 @@ static void builderQuickwitIndex(std::string& bulkData, std::string_view id, std
             }
         }
 
+        // Fix group.users if it's an array - convert to JSON string
+        if (doc.contains("group") && doc["group"].is_object())
+        {
+            auto& group = doc["group"];
+            if (group.contains("users") && group["users"].is_array())
+            {
+                // Convert array to JSON string representation
+                group["users"] = group["users"].dump();
+            }
+        }
+
         // Serialize and append
         bulkData.append(doc.dump());
         bulkData.append("\n");
