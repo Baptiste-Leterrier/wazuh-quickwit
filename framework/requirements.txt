@@ -58,7 +58,7 @@ packaging==25.0
 pathable==0.4.3
 pathlib==1.0.1
 proto-plus==1.26.0
-protobuf==5.29.5
+protobuf==5.29.6
 psutil==5.9.0
 pyarrow==14.0.1
 pyasn1==0.4.8
